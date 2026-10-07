@@ -297,11 +297,19 @@ export function archive(kind, id, on) {
     const t = task(id);
     if (!t || t.kind !== 'chat') throw new Error('No such chat.');
     if (on && ['working', 'queued'].includes(t.status)) throw new Error("They're still working in this chat. Wait for the reply, or stop it first.");
+    if (!on) notArchived(null, project(t.project_id)); // its project comes back first
     return exec(`UPDATE tasks SET archived_at = ${stamp} WHERE id = ?`, id);
   }
-  if (kind === 'project') {
-    if (!project(id)) throw new Error('No such project.');
-    return exec(`UPDATE projects SET archived_at = ${stamp} WHERE id = ?`, id);
+  if (kind === 'project') { // its chats and tasks go with it, and come back with it
+    const p = project(id);
+    if (!p) throw new Error('No such project.');
+    if (on) {
+      if (one(`SELECT 1 FROM tasks WHERE project_id = ? AND status IN ${OPEN}`, id)) throw new Error('It still has work going on. Stop or finish it first.');
+      exec('UPDATE projects SET archived_at = CURRENT_TIMESTAMP WHERE id = ?', id);
+      return exec('UPDATE tasks SET archived_at = (SELECT archived_at FROM projects WHERE id = ?) WHERE project_id = ? AND archived_at IS NULL', id, id);
+    }
+    exec('UPDATE tasks SET archived_at = NULL WHERE project_id = ? AND archived_at = ?', id, p.archived_at); // not chats you archived before
+    return exec('UPDATE projects SET archived_at = NULL WHERE id = ?', id);
   }
   if (kind !== 'employee') throw new Error('Archive a chat, a project or a person.');
   const e = employee(id);
@@ -335,6 +343,9 @@ for (const t of all('SELECT * FROM tasks WHERE id NOT IN (SELECT task_id FROM me
 exec(`UPDATE tasks SET kind = 'chat', created_by = 'me', status = CASE WHEN status IN ('review', 'done') THEN 'idle' ELSE status END
   WHERE created_by IS NULL AND parent_id IS NULL`);
 exec(`UPDATE tasks SET created_by = COALESCE(asked_by, 'me') WHERE created_by IS NULL`);
+// Projects archived before their chats and tasks went with them: those go now, so Restore brings them back together.
+exec(`UPDATE tasks SET archived_at = (SELECT archived_at FROM projects p WHERE p.id = tasks.project_id)
+  WHERE archived_at IS NULL AND project_id IN (SELECT id FROM projects WHERE archived_at IS NOT NULL)`);
 
 // ---------- memory: plain files you can open and edit ----------
 const readFile = (f) => { try { return fs.readFileSync(f, 'utf8'); } catch { return ''; } };
@@ -1338,6 +1349,7 @@ const routes = {
     if (employee_id && !employee(employee_id)) throw new Error('That person is no longer on the team.');
     if (project_id && !project(project_id)) throw new Error('That project no longer exists.');
     notArchived(employee_id !== t.employee_id && employee(employee_id), project_id !== t.project_id && project(project_id));
+    notArchived(null, project(t.project_id)); // an archived project's tasks stay as they were
     if (employee_id !== t.employee_id && t.status === 'working') throw new Error('Stop it before giving it to someone else.');
     if (b.model && !MODELS.includes(b.model)) throw new Error('Pick a model.');
     if (b.effort && !EFFORTS.includes(b.effort)) throw new Error('Pick an effort level.');
@@ -1354,7 +1366,7 @@ const routes = {
   'POST /api/tasks/:id/messages': (t, b) => {
     const files = cleanAttachments(b.attachments, cwdOf(t)), text = String(b.text || '').trim();
     if (!text && !files.length) throw new Error('Write a message first.');
-    notArchived(employee(t.employee_id));
+    notArchived(employee(t.employee_id), project(t.project_id));
     if (t.archived_at) archive('chat', t.id, false); // writing in an archived chat brings it back
     sendMessage(t, text || 'Please look at the files I attached.', files);
   },

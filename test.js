@@ -286,6 +286,18 @@ test('archive: people, projects and chats come back with Restore; busy or main p
   const proj = Number(db.prepare("INSERT INTO projects (name, folder) VALUES ('ArcProj', '/tmp')").run().lastInsertRowid);
   archive('project', proj, true); assert.ok(row('projects', proj).archived_at);
   archive('project', proj, false); assert.equal(row('projects', proj).archived_at, null);
+  // A project takes its chats and tasks with it, and brings back only those; a chat archived before stays archived.
+  const inProj = (kind, status) => Number(db.prepare('INSERT INTO tasks (kind, title, employee_id, project_id, status) VALUES (?, ?, ?, ?, ?)').run(kind, 'p', lead, proj, status).lastInsertRowid);
+  const pChat = inProj('chat', 'idle'), pTask = inProj('task', 'done'), early = inProj('chat', 'idle');
+  db.prepare("UPDATE tasks SET archived_at = '2020-01-01 00:00:00' WHERE id = ?").run(early);
+  archive('project', proj, true);
+  assert.ok(row('tasks', pChat).archived_at && row('tasks', pTask).archived_at);
+  assert.throws(() => archive('chat', pChat, false), /project is archived/);
+  archive('project', proj, false);
+  assert.equal(row('tasks', pChat).archived_at, null); assert.equal(row('tasks', pTask).archived_at, null);
+  assert.equal(row('tasks', early).archived_at, '2020-01-01 00:00:00');
+  db.prepare("UPDATE tasks SET status = 'working' WHERE id = ?").run(pTask);
+  assert.throws(() => archive('project', proj, true), /work going on/);
   db.close();
 });
 
