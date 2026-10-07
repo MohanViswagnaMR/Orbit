@@ -1,0 +1,9 @@
+# Orbit keeps your data outside this folder (in ~/.orbit by default). These are only here in case data lands in the code folder.
+data/
+workspace/
+notes/
+projects/
+node_modules/
+*.log
+.DS_Store
+Thumbs.db

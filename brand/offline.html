@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orbit</title>
+<meta name="theme-color" content="#0f1424">
+<style>
+  :root { --bg: #f5f7fc; --card: #ffffff; --text: #161b2e; --muted: #5a6382; --line: #dfe4f1; --code: #eceff8; --accent: #6b5ce7; --on-accent: #ffffff;
+          --serif: ui-serif, "Iowan Old Style", Georgia, serif; --mono: ui-monospace, Menlo, monospace; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0f1424; --card: #182036; --text: #e6e9f5; --muted: #98a1bf; --line: #2a3452; --code: #0f1424; --accent: #9a8cff; --on-accent: #1f1e1d; color-scheme: dark; } }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+         display: grid; place-items: center; padding: 24px 16px; -webkit-font-smoothing: antialiased; }
+  main { width: min(520px, 100%); background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 28px; display: grid; gap: 14px;
+         box-shadow: 0 24px 64px rgb(0 0 0 / .18); }
+  .logo { width: 56px; height: 56px; border-radius: 23%; display: grid; place-items: center; color: #fff; background: linear-gradient(145deg, #9a8cff, #6b5ce7); }
+  .logo svg { width: 66%; height: 66%; }
+  h1 { margin: 4px 0 0; font: 600 28px/1.2 var(--serif); }
+  p { margin: 0; color: var(--muted); }
+  ol { margin: 0; padding-left: 20px; display: grid; gap: 10px; color: var(--muted); }
+  ol b { color: var(--text); font-weight: 600; }
+  .cmd { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+  .cmd[hidden] { display: none; }
+  code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; font: 12.5px var(--mono); padding: 8px 10px; border-radius: 9px; background: var(--code); border: 1px solid var(--line); color: var(--text); }
+  button { font: 600 13.5px system-ui, sans-serif; border-radius: 9px; padding: 8px 14px; border: 1px solid var(--line); background: var(--card); color: var(--text); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  footer { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
+  #status { font-size: 13px; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <div class="logo"><svg viewBox="0 0 64 64" aria-hidden="true"><ellipse cx="32" cy="32" rx="26" ry="13" transform="rotate(-28 32 32)" fill="none" stroke="currentColor" stroke-width="2.6" opacity=".8"/><circle cx="32" cy="32" r="8.5" fill="currentColor"/><circle cx="50.2" cy="16.1" r="5.2" fill="currentColor"/><circle cx="8.6" cy="38.2" r="3.7" fill="currentColor"/><circle cx="27.8" cy="47.6" r="3.7" fill="currentColor"/></svg></div>
+  <h1>Orbit isn't running</h1>
+  <p>Orbit runs on this computer and normally starts by itself when you log in. Your team, chats and files are all safe; the app just isn't answering right now.</p>
+  <ol>
+    <li><b>Start it again</b> with the command for your computer:
+      <div class="cmd" id="row-mac"><code id="c1">launchctl kickstart -k gui/$(id -u)/local.orbit 2&gt;/dev/null || launchctl kickstart -k gui/$(id -u)/local.crew</code><button type="button" data-copy="c1">Copy</button></div>
+      <div class="cmd" id="row-win"><code id="c2">Start-ScheduledTask -TaskName Orbit</code><button type="button" data-copy="c2">Copy</button></div>
+      <div class="cmd" id="row-linux"><code id="c3">systemctl --user restart orbit</code><button type="button" data-copy="c3">Copy</button></div></li>
+    <li><b>Still not back?</b> Start it by hand: open a terminal in the folder where Orbit is installed and run <code style="flex:none;padding:2px 6px">node server.js</code>. Keep that window open.</li>
+    <li><b>To see what went wrong,</b> look at <code style="flex:none;padding:2px 6px">server.log</code> in Orbit's data folder (<code style="flex:none;padding:2px 6px">~/.orbit</code> unless you chose another).</li>
+  </ol>
+  <footer><button type="button" class="primary" id="retry">Try again</button><span id="status" role="status">Checking every few seconds…</span></footer>
+</main>
+<script>
+  // Come back to Orbit by itself as soon as it answers.
+  const os = /Mac/.test(navigator.platform) ? 'mac' : /Win/.test(navigator.platform) ? 'win' : 'linux';
+  for (const k of ['mac', 'win', 'linux']) document.getElementById('row-' + k).hidden = k !== os;
+  // This page sits at Orbit's own address, so reloading brings Orbit back once it answers.
+  const back = async () => {
+    try { const r = await fetch('/api/state', { cache: 'no-store' }); if (r.ok) { location.reload(); return true; } } catch {}
+    return false;
+  };
+  setInterval(back, 3000);
+  document.getElementById('retry').addEventListener('click', async () => {
+    document.getElementById('status').textContent = 'Checking…';
+    if (!(await back())) document.getElementById('status').textContent = 'Still not answering. Try the steps above.';
+  });
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-copy]');
+    if (!b) return;
+    try { await navigator.clipboard.writeText(document.getElementById(b.dataset.copy).textContent); b.textContent = 'Copied'; setTimeout(() => (b.textContent = 'Copy'), 1200); }
+    catch { getSelection().selectAllChildren(document.getElementById(b.dataset.copy)); }
+  });
+</script>
+</body>
+</html>

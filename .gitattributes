@@ -1,2 +1,8 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+# Scripts keep the line endings their system expects
+*.sh text eol=lf
+*.command text eol=lf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.png binary
