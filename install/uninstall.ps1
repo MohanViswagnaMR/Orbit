@@ -59,3 +59,11 @@ if (Test-Path $App) { Remove-Item $App -Recurse -Force }
 Write-Host ''
 Write-Host 'Orbit is removed.'
 if ($choice -eq '1' -and (Test-Path $Data)) { Write-Host "Your team, chats and files are still in $Data. Installing Orbit again finds them." }
+
+# 4. Orbit as a browser app (Chrome, Edge). Without this it keeps showing "Orbit isn't running".
+#    The browser registers it with Windows; running that uninstall command makes the browser ask to remove it.
+$webapps = @(Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
+  Where-Object { $_.DisplayName -eq 'Orbit' -and $_.UninstallString -like '*--uninstall-app-id=*' })
+foreach ($w in $webapps) { if ($w.UninstallString -match '^"([^"]+)"\s+(.*)$') { Start-Process $Matches[1] $Matches[2] } }
+if ($webapps.Count) { Write-Host 'Your browser now asks to remove the Orbit app too: tick "Also clear data" and click Remove.' }
+else { Write-Host 'If you added Orbit as an app in your browser, remove it there too: open the Orbit app, click ... (top right), choose "Uninstall Orbit" and tick "Also clear data".' }

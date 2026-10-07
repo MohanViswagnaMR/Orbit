@@ -16,9 +16,24 @@ case "$OS" in
   *)      APP="${ORBIT_APP_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/orbit}" ;;
 esac
 ask() { local a=""; if [ -t 0 ]; then read -r -p "  $1 " a || true; fi; echo "${a:-$2}"; }
+# Takes the Dock icons that open app $1 out of the Dock.
+dock_remove() {
+  local f i=0 hit="" url="file://${1// /%20}/" pb=/usr/libexec/PlistBuddy
+  f="$(mktemp)"
+  if defaults export com.apple.dock "$f" 2>/dev/null; then
+    while "$pb" -c "Print :persistent-apps:$i" "$f" >/dev/null 2>&1; do
+      if [ "$("$pb" -c "Print :persistent-apps:$i:tile-data:file-data:_CFURLString" "$f" 2>/dev/null)" = "$url" ]; then
+        "$pb" -c "Delete :persistent-apps:$i" "$f"; hit=1
+      else i=$((i + 1)); fi
+    done
+    if [ -n "$hit" ]; then defaults import com.apple.dock "$f"; killall Dock 2>/dev/null || true; fi
+  fi
+  rm -f "$f"
+}
 
 # 1. Stop it, and stop it starting at login
 if [ "$OS" = "Darwin" ]; then
+  PORT="$(plutil -extract EnvironmentVariables.PORT raw -o - "$HOME/Library/LaunchAgents/$LABEL.plist" 2>/dev/null || echo "${ORBIT_PORT:-4321}")"
   launchctl bootout "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || true
   rm -f "$HOME/Library/LaunchAgents/$LABEL.plist"
 else
@@ -59,6 +74,22 @@ if [ "$CHOICE" = "3" ]; then rm -rf "$DATA"; echo "  Your Orbit data is deleted.
 
 # 3. The app
 rm -rf "$APP"
+
+# 4. Orbit as a browser app (Chrome, Edge, Brave): its app and Dock icon. Without this it keeps showing "Orbit isn't running".
+WEBAPP=""
+if [ "$OS" = "Darwin" ]; then
+  for SHIM in "$HOME/Applications/"*" Apps.localized"/*.app; do
+    [ "$(plutil -extract CrAppModeShortcutURL raw -o - "$SHIM/Contents/Info.plist" 2>/dev/null)" = "http://localhost:$PORT/" ] || continue
+    dock_remove "$SHIM"; rm -rf "$SHIM"; WEBAPP=1
+  done
+fi
+
 echo
 echo "Orbit is removed."
 if [ "$CHOICE" = "1" ] && [ -d "$DATA" ]; then echo "Your team, chats and files are still in $DATA. Installing Orbit again finds them."; fi
+# The browser's own app list can only be changed by the browser.
+if [ -n "$WEBAPP" ]; then
+  echo "Its browser app is removed too. Chrome may still list it on chrome://apps: right-click it there, choose \"Remove from Chrome\" and tick \"Also clear data\"."
+elif [ "$OS" != "Darwin" ]; then
+  echo "If you added Orbit as an app in your browser, remove it there too: open the Orbit app, click ⋮ (top right), choose \"Uninstall Orbit\" and tick \"Also clear data\"."
+fi

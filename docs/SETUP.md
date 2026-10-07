@@ -158,6 +158,11 @@ This stops Orbit, stops it starting at login, and deletes the app. Then it shows
 2. **Save a backup file, then remove it.** The file (`Orbit backup <date>.tar.gz`) goes in your home folder (your user folder on Windows). Keep it anywhere, such as cloud storage or a USB stick.
 3. **Delete it.**
 
+If you added Orbit as an app in your browser ([step 6](#6-your-first-five-minutes)), the uninstaller removes that too:
+- **macOS:** it deletes the Chrome, Edge or Brave app and its Dock icon. Chrome may still list it on `chrome://apps`: right-click it there, choose **Remove from Chrome** and tick **Also clear data**. A Safari app isn't found automatically: delete `Orbit.app` from the Applications folder in your home folder.
+- **Windows:** your browser asks to remove the Orbit app. Tick **Also clear data** and click **Remove**.
+- **Linux:** remove it in the browser. Open the Orbit app, click **⋮** (top right), choose **Uninstall Orbit** and tick **Also clear data**.
+
 You can also choose without being asked:
 - **macOS and Linux:** `bash install/uninstall.sh --backup` or `--delete-data`
 - **Windows:** `powershell -ExecutionPolicy Bypass -File install\uninstall.ps1 -Backup` or `-DeleteData`
