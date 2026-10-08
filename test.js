@@ -10,9 +10,50 @@ const aFile = path.join(os.tmpdir(), 'orbit-test-a-file.txt'); // a plain file, 
 // Tests get a throwaway data folder, so they never touch your real data.
 process.env.CREW_DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-test-'));
 process.env.CREW_CLAUDE_HOME = path.join(process.env.CREW_DATA, 'claude-home'); // a pretend ~/.claude, so tests never read yours
+process.env.CLAUDE_BIN = path.join(process.env.CREW_DATA, 'no-claude'); // and never start Claude (hiring draws a picture in the background)
 fs.writeFileSync(aFile, 'x');
 after(() => { fs.rmSync(process.env.CREW_DATA, { recursive: true, force: true }); fs.rmSync(aFile, { force: true }); });
-const { pickNotes, splitNotes, nextRun, permsOf, checkFolder, listFolder, bashPrefix, preApproved, describe, cleanAppearance, messageFiles, cleanSvg, STYLES, TOOLS, searchFonts, setBoss, cleanQuestions, cleanAttachments, rankFiles, archive, readSkillMd, saveSkill, findSkills, assignSkill, skillsOf } = await import('./server.js');
+const { pickNotes, splitNotes, nextRun, permsOf, checkFolder, listFolder, bashPrefix, preApproved, describe, cleanAppearance, messageFiles, cleanSvg, STYLES, TOOLS, searchFonts, setBoss, cleanQuestions, cleanAttachments, rankFiles, archive, readSkillMd, saveSkill, findSkills, assignSkill, skillsOf, pickSkills, parseGithubUrl, searchSkills, readHiring, hireAll, exportPerson, exportTeam, importPerson, engineOf, availableModels, modelOk, readPick, readCodex, readAntigravity, sessionFor, handoff, baseModel } = await import('./server.js');
+
+test('engines: models from every engine, what Auto picks, and each engine read the same way', () => {
+  assert.deepEqual([engineOf('sonnet'), engineOf('gpt:gpt-5.5'), engineOf('gemini:gemini-3.1-pro-high')], ['claude', 'gpt', 'gemini']);
+  assert.deepEqual(availableModels().map((m) => m.value), ['haiku', 'sonnet', 'opus', 'fable']); // nothing else switched on
+  assert.ok(modelOk('opus') && !modelOk('gpt:gpt-5.5'));
+  assert.deepEqual([baseModel('light'), baseModel('standard')], ['haiku', 'sonnet']); // Orbit's own jobs, on Claude as the main AI
+  const models = availableModels();
+  assert.deepEqual(readPick('Sure: {"model": "haiku", "effort": "low", "why": "a quick lookup"}', models), { model: 'haiku', effort: 'low', why: 'a quick lookup' });
+  assert.equal(readPick('{"model": "gpt:not-switched-on"}', models), null); // only what you can use
+  const reader = () => { const o = { final: null, text: null, logs: [], files: [], skills: [], id: null };
+    return Object.assign(o, { session: (id) => (o.id = id), log: (l) => o.logs.push(l), changed: (f) => o.files.push(f), skill: (s) => o.skills.push(s) }); };
+  const c = reader(); // Codex (ChatGPT)
+  for (const m of [{ type: 'thread.started', thread_id: 'T1' }, { type: 'item.completed', item: { type: 'command_execution', command: '/bin/zsh -lc ls', exit_code: 0 } },
+    { type: 'item.completed', item: { type: 'file_change', changes: [{ path: 'a.md', kind: 'add' }] } }, { type: 'item.completed', item: { type: 'mcp_tool_call', tool: 'read_skill', arguments: { id: 'github/pdf' } } },
+    { type: 'item.completed', item: { type: 'agent_message', text: 'Done.' } }, { type: 'turn.completed', usage: {} }]) readCodex(m, c);
+  assert.deepEqual([c.id, c.files, c.skills, c.final], ['T1', ['a.md'], ['github/pdf'], { result: 'Done.', is_error: false, total_cost_usd: 0 }]);
+  assert.ok(c.logs.includes('→ Bash ls\n'));
+  const g = reader(); // Antigravity (Gemini)
+  for (const m of [{ event: 'init', conversation_id: 'G1' }, { event: 'step_update', step_update: { step_type: 'tool', state: 'DONE', tool_name: 'write_to_file', tool_info: { parameters: { TargetFile: '/w/b.md' } } } },
+    { event: 'result', result: { status: 'SUCCESS', response: '', denied_actions: [{ action: 'command', display_name: 'RunCommand' }] } }]) readAntigravity(m, g);
+  assert.deepEqual([g.id, g.files], ['G1', ['/w/b.md']]);
+  assert.match(g.final.result, /doesn't allow RunCommand/); // blocked: it says so instead of an empty reply
+});
+
+test('switching a chat to another engine: each engine resumes only its own conversation; the new one gets what was said', async () => {
+  assert.equal(sessionFor({ session_id: 'abc-123' }, 'claude'), 'abc-123');
+  assert.equal(sessionFor({ session_id: 'abc-123' }, 'gemini'), null);
+  assert.equal(sessionFor({ session_id: 'gemini:g-1' }, 'gemini'), 'g-1');
+  assert.equal(sessionFor({ session_id: 'gemini:g-1' }, 'claude'), null);
+  assert.equal(sessionFor({ session_id: null }, 'claude'), null);
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(path.join(process.env.CREW_DATA, 'crew.db'));
+  const t = Number(db.prepare("INSERT INTO tasks (kind, title, employee_id, status) VALUES ('chat', 'switch', 0, 'idle')").run().lastInsertRowid);
+  for (const [kind, author, text] of [['me', 'me', 'What models do you have?'], ['reply', 'Movis', 'Haiku, Sonnet and Opus.'], ['me', 'me', 'now tell me']])
+    db.prepare('INSERT INTO messages (task_id, kind, author, text) VALUES (?, ?, ?, ?)').run(t, kind, author, text);
+  const h = handoff({ id: t, employee_id: 0 });
+  assert.match(h, /Owner: What models do you have\?\n\nMovis: Haiku, Sonnet and Opus\./);
+  assert.ok(!h.includes('now tell me')); // the newest message comes in the prompt itself
+  db.close();
+});
 
 test('notes keep only bullet lines; NOTHING adds nothing', () => {
   assert.deepEqual(pickNotes('Here is what I learned:\n- Prefers British spelling\n* Likes short answers\nThanks!'),
@@ -314,7 +355,8 @@ test('skills: read SKILL.md, make your own, find installed ones, give them to pe
   assert.throws(() => saveSkill({ name: 'write blog posts', description: 'x', body: 'y' }), /already a skill/);
   assert.throws(() => saveSkill({ name: 'empty', description: 'x', body: '' }), /instructions/);
   const ids = findSkills().map((x) => x.id).sort();
-  assert.deepEqual(ids, ['orbit/write-blog-posts', 'plugin/marketing/seo-audit', 'user/docx']);
+  assert.deepEqual(ids.filter((x) => !x.startsWith('core/')), ['orbit/write-blog-posts', 'plugin/marketing/seo-audit', 'user/docx']);
+  assert.deepEqual(ids.filter((x) => x.startsWith('core/')), ['core/ask-the-owner', 'core/check-results', 'core/choose-model', 'core/delegate-work', 'core/find-skills', 'core/report-back']); // Orbit's own, for everyone
   const { DatabaseSync } = await import('node:sqlite');
   const db = new DatabaseSync(path.join(process.env.CREW_DATA, 'crew.db'));
   const add = (name) => Number(db.prepare("INSERT INTO employees (name, role, model, access, folder) VALUES (?, 'x', 'default', 'read', ?)").run(name, path.join(process.env.CREW_DATA, name)).lastInsertRowid);
@@ -326,6 +368,114 @@ test('skills: read SKILL.md, make your own, find installed ones, give them to pe
   assert.deepEqual(skills(a), []);
   assert.deepEqual(skills(b), ['user/docx', 'plugin/marketing/seo-audit']);
   assert.throws(() => assignSkill('user/nope', [a]), /gone/);
+  assert.throws(() => assignSkill('core/delegate-work', [a]), /Everyone has/);
+  // Searching the whole collection: by name or description, word endings don't matter, core skills are left out
+  assert.equal(searchSkills('write a blog post')[0].id, 'orbit/write-blog-posts');
+  assert.equal(searchSkills('SEO audits')[0].id, 'plugin/marketing/seo-audit');
+  assert.deepEqual(searchSkills('delegate work to teammates'), []);
+  assert.throws(() => searchSkills('  '), /few words/);
+  const read = TOOLS.find((x) => x.name === 'read_skill').run({ id: 'orbit/write-blog-posts' });
+  assert.match(read, /Plan, draft, edit\./);
+  db.close();
+});
+
+test('auto skills: only skills that exist, at most 8 each, whatever Claude wraps the answer in', () => {
+  const people = [{ id: 1 }, { id: 2 }, { id: 3 }], skills = 'abcdefghi'.split('').map((x) => ({ id: `orbit/${x}` }));
+  const out = pickSkills('Sure!\n```json\n{"1": ["orbit/a", "orbit/made-up", "orbit/a"], "2": ' + JSON.stringify(skills.map((x) => x.id)) + '}\n```', people, skills);
+  assert.deepEqual(out[1], ['orbit/a']); // real and once
+  assert.equal(out[2].length, 8);
+  assert.deepEqual(out[3], []); // left out: nothing
+  assert.deepEqual(pickSkills('no JSON at all', people, skills)[1], []);
+});
+
+test('skills from GitHub: a repository, a folder in it, or its SKILL.md', () => {
+  assert.deepEqual(parseGithubUrl('https://github.com/anthropics/skills'), { owner: 'anthropics', repo: 'skills', ref: 'HEAD', dir: '' });
+  assert.deepEqual(parseGithubUrl('https://github.com/anthropics/skills/tree/main/skills/pdf/'), { owner: 'anthropics', repo: 'skills', ref: 'main', dir: 'skills/pdf' });
+  assert.deepEqual(parseGithubUrl('https://github.com/a/b/blob/v2/x/SKILL.md'), { owner: 'a', repo: 'b', ref: 'v2', dir: 'x' });
+  assert.equal(parseGithubUrl('github.com/a/b.git'.replace(/^/, 'https://')).repo, 'b');
+  assert.throws(() => parseGithubUrl('https://gitlab.com/a/b'), /GitHub link/);
+});
+
+test('handing out work: a chosen model, and never back up the chain', async () => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(path.join(process.env.CREW_DATA, 'crew.db'));
+  const add = (name) => Number(db.prepare("INSERT INTO employees (name, role, model, access, folder) VALUES (?, 'x', 'default', 'edit', ?)").run(name, path.join(process.env.CREW_DATA, name)).lastInsertRowid);
+  const a = add('LoopA'), b = add('LoopB'); add('LoopC');
+  const chat = Number(db.prepare("INSERT INTO tasks (kind, title, employee_id, status) VALUES ('chat', 'plan', ?, 'working')").run(a).lastInsertRowid);
+  const create = TOOLS.find((x) => x.name === 'create_task'), byTitle = (title) => db.prepare('SELECT * FROM tasks WHERE title = ?').get(title);
+  create.run({ title: 'Loop research', description: 'x', assignee: 'LoopB', model: 'haiku', effort: 'low' }, { employeeId: a, taskId: chat });
+  const t1 = byTitle('Loop research');
+  assert.equal(t1.model, 'haiku'); assert.equal(t1.effort, 'low');
+  assert.throws(() => create.run({ title: 'Back to A', description: 'x', assignee: 'LoopA' }, { employeeId: b, taskId: t1.id }), /round in circles/);
+  create.run({ title: 'Loop detail', description: 'x', assignee: 'LoopC' }, { employeeId: b, taskId: t1.id }); // further down is fine
+  const t2 = byTitle('Loop detail');
+  assert.equal(t2.model, null); // their own setting
+  assert.throws(() => create.run({ title: 'Back to B', description: 'x', assignee: 'LoopB' }, { employeeId: t2.employee_id, taskId: t2.id }), /round in circles/);
+  assert.throws(() => create.run({ title: 'x', description: 'x', assignee: 'LoopB', model: 'gpt-9' }, { employeeId: a, taskId: chat }), /model must be/);
+  db.close();
+});
+
+test('hire with help: questions or a plan from the hiring assistant; bosses are hired before their people', async () => {
+  const q = readHiring('Here you go: {"questions": [{"question": "What are you working on?", "options": ["An app", "A shop"]}]}', false);
+  assert.deepEqual(q.questions[0].options.map((o) => o.label), ['An app', 'A shop']);
+  const plan = readHiring('{"summary": "Two people.", "hires": [{"name": "Hw Lead", "title": "Lead", "job_description": "You lead.", "model": "gpt", "file_access": "root"}, {"name": "", "job_description": "x"}]}', true);
+  assert.deepEqual(plan.hires.map((h) => [h.name, h.model, h.file_access, h.reports_to]), [['HwLead', 'auto', 'read', 'owner']]); // cleaned (an unknown model becomes Auto), and the nameless one dropped
+  assert.throws(() => readHiring('{"questions": [{"question": "x?", "options": ["a", "b"]}]}', true), /didn't come back with a plan/); // last round: questions don't count
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(path.join(process.env.CREW_DATA, 'crew.db')), row = (n) => db.prepare('SELECT * FROM employees WHERE name = ?').get(n);
+  db.prepare('DELETE FROM employees').run(); // the earlier tests' people would fill the company
+  const { hired } = hireAll([{ name: 'HwB', title: 'Helper', job_description: 'You help.', reports_to: 'HwA' }, { name: 'HwA', title: 'Lead', job_description: 'You lead.', reports_to: 'owner' }]);
+  assert.deepEqual(hired.map((x) => x.name), ['HwA', 'HwB']); // the boss first
+  assert.equal(row('HwB').reports_to, row('HwA').id);
+  assert.equal(row('HwA').reports_to, null);
+  assert.equal(db.prepare("SELECT value FROM settings WHERE key = 'main_assistant'").get().value, String(row('HwA').id)); // the first teammate runs the team
+  assert.throws(() => hireAll([{ name: 'HwA', job_description: 'x' }]), /already have someone/);
+  assert.throws(() => hireAll([{ name: 'HwC', job_description: 'x' }, { name: 'hwc', job_description: 'y' }]), /same name/);
+  assert.throws(() => hireAll([{ name: 'HwD', job_description: 'x' }, { name: 'HwE', job_description: ' ' }]), /job description/);
+  assert.equal(row('HwD'), undefined); // nobody half hired
+  fs.mkdirSync(path.join(process.env.CREW_DATA, 'notes'), { recursive: true });
+  fs.writeFileSync(path.join(process.env.CREW_DATA, 'notes', 'hwn.md'), '- notes of someone let go'); // a leftover with the same name
+  hireAll([{ name: 'HwN', job_description: 'You start fresh.' }]);
+  assert.ok(!fs.existsSync(path.join(process.env.CREW_DATA, 'notes', 'hwn.md'))); // not inherited
+  db.close();
+});
+
+test('a teammate as a file: exported with their skills, imported safely into another Orbit', async () => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(path.join(process.env.CREW_DATA, 'crew.db')), row = (n) => db.prepare('SELECT * FROM employees WHERE name = ?').get(n);
+  const id = Number(db.prepare(`INSERT INTO employees (name, title, role, personality, model, access, folder, skills, avatar) VALUES ('ExA', 'Writer', 'You write.', 'Warm.', 'haiku', 'full', ?, '["orbit/write-blog-posts"]', '1')`)
+    .run(path.join(process.env.CREW_DATA, 'exa')).lastInsertRowid);
+  fs.mkdirSync(path.join(process.env.CREW_DATA, 'avatars'), { recursive: true });
+  fs.writeFileSync(path.join(process.env.CREW_DATA, 'avatars', `${id}.svg`), '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><rect width="8" height="8"/></svg>');
+  fs.mkdirSync(path.join(process.env.CREW_DATA, 'notes'), { recursive: true });
+  fs.writeFileSync(path.join(process.env.CREW_DATA, 'notes', 'exa.md'), '- Sam likes tea');
+  assert.equal(exportPerson(id).notes, null); // notes stay home unless asked for
+  const file = exportPerson(id, { notes: true });
+  assert.deepEqual([file.orbit, file.person.name, file.skills.map((k) => k.name), Object.keys(file.skills[0].files)], ['teammate', 'ExA', ['write-blog-posts'], ['SKILL.md']]);
+  const back = importPerson(JSON.stringify(file)); // a friend's Orbit: here, the same one, so the name is taken
+  assert.deepEqual([back.name, back.renamed, back.skills], ['ExA2', true, 1]);
+  const ex2 = row('ExA2');
+  assert.deepEqual([ex2.title, ex2.model, ex2.access, ex2.reports_to, ex2.skills], ['Writer', 'haiku', 'edit', null, '["orbit/write-blog-posts"]']); // the same skill is shared, full access comes in as edit
+  assert.ok(fs.readFileSync(path.join(process.env.CREW_DATA, 'avatars', `${ex2.id}.svg`), 'utf8').startsWith('<svg') && ex2.avatar);
+  assert.equal(fs.readFileSync(path.join(process.env.CREW_DATA, 'notes', 'exa2.md'), 'utf8'), '- Sam likes tea');
+  const b64 = (t) => Buffer.from(t).toString('base64');
+  const sneaky = importPerson({ orbit: 'teammate', person: { name: 'Sly', role: 'You help.', access: 'full' }, picture: '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script><rect/></svg>',
+    skills: [{ name: 'evil', files: { 'SKILL.md': b64('---\nname: evil\ndescription: x\n---\nx'), '../../escaped.txt': b64('no') } }] });
+  assert.ok(!fs.existsSync(path.join(process.env.CREW_DATA, 'escaped.txt')) && fs.existsSync(path.join(process.env.CREW_DATA, 'skills', 'evil', 'SKILL.md')));
+  assert.ok(!fs.existsSync(path.join(process.env.CREW_DATA, 'avatars', `${sneaky.id}.svg`)) && row('Sly').avatar === ''); // a picture with a script in it isn't used at all
+  assert.throws(() => importPerson('{"hello": 1}'), /isn't an Orbit teammate or team file/);
+  // The whole team: everyone, their bosses, and each skill once
+  const team = exportTeam();
+  assert.equal(team.orbit, 'team');
+  assert.deepEqual(team.people.find((x) => x.person.name === 'HwB').reports_to, 'HwA');
+  assert.equal(team.skills.filter((k) => k.name === 'write-blog-posts').length, 1); // ExA and ExA2 share it: stored once
+  const before = db.prepare('SELECT count(*) AS n FROM employees').get().n, main = db.prepare("SELECT value FROM settings WHERE key = 'main_assistant'").get().value;
+  const got = importPerson(JSON.stringify({ ...team, people: [...team.people].reverse() })); // even with each boss after their people in the file
+  assert.equal(got.people.length, team.people.length);
+  assert.equal(db.prepare('SELECT count(*) AS n FROM employees').get().n, before + team.people.length);
+  const copy = (n) => row(got.people.find((x) => x.name.startsWith(n) && x.name !== n).name);
+  assert.equal(copy('HwB').reports_to, copy('HwA').id); // the org chart comes along, pointing at the new copies
+  assert.equal(db.prepare("SELECT value FROM settings WHERE key = 'main_assistant'").get().value, main); // you already had a main assistant: still yours
   db.close();
 });
 
@@ -373,6 +523,24 @@ test('backups: a data folder goes into one file and comes back, with paths point
   assert.equal(back.prepare('SELECT folder FROM employees').get().folder, path.join(to, 'workspace', 'ada')); // follows the data
   assert.equal(JSON.parse(back.prepare('SELECT attachments FROM messages').get().attachments)[0].path, path.join(to, 'uploads', 'a', 'shot.png'));
   back.close();
+  // Only some parts: the rest stays out, and the database forgets what it left out
+  const db2 = new DatabaseSync(path.join(from, 'crew.db'));
+  db2.exec(`ALTER TABLE employees ADD COLUMN avatar TEXT; ALTER TABLE employees ADD COLUMN skills TEXT;
+    UPDATE employees SET avatar = '123', skills = '["orbit/x","github/y","user/docx"]'; INSERT INTO settings VALUES ('owner_avatar', 'svg:1');`);
+  db2.close();
+  fs.mkdirSync(path.join(from, 'avatars')); fs.writeFileSync(path.join(from, 'avatars', '1.svg'), '<svg/>');
+  fs.mkdirSync(path.join(from, 'notes')); fs.writeFileSync(path.join(from, 'notes', 'Ada.md'), '- likes tea');
+  const part = path.join(root, 'part.tar.gz'), to2 = path.join(root, 'part restored');
+  await makeBackup(from, part, ['memory']);
+  assert.deepEqual((await inspect(part)).parts, ['memory']);
+  await restore(part, to2);
+  assert.ok(fs.existsSync(path.join(to2, 'notes', 'Ada.md')) && !fs.existsSync(path.join(to2, 'avatars')) && !fs.existsSync(path.join(to2, 'workspace')));
+  const b2 = new DatabaseSync(path.join(to2, 'crew.db')), ada = b2.prepare('SELECT avatar, skills FROM employees').get();
+  assert.equal(ada.avatar, ''); // no broken picture
+  assert.equal(ada.skills, '["user/docx"]'); // skills that weren't in it are gone; Claude's own stay
+  assert.equal(b2.prepare("SELECT value FROM settings WHERE key = 'owner_avatar'").get().value, '');
+  b2.close();
+  assert.ok(fs.existsSync(path.join(from, 'avatars', '1.svg'))); // the real data is untouched
   await assert.rejects(() => restore(file, to), /isn't empty/);
   const moved = aside(to);
   assert.ok(moved.includes('-old-') && fs.existsSync(path.join(moved, 'crew.db')) && !fs.existsSync(to));

@@ -20,6 +20,11 @@ Unregister-ScheduledTask -TaskName 'Orbit' -Confirm:$false -ErrorAction Silently
 $shortcut = Join-Path ([Environment]::GetFolderPath('Startup')) 'Orbit.lnk'
 if (Test-Path $shortcut) { Remove-Item $shortcut -Force }
 
+# 1b. What Orbit added to Antigravity (Gemini): its "orbit" tool connection and the rule that allows it. A settings file it can't read is left alone.
+$agy = Get-Command agy -ErrorAction SilentlyContinue
+if ($agy -and ("$(& $agy.Source mcp list 2>&1)" -match 'mcp-bridge\.mjs')) { & $agy.Source mcp remove orbit 2>&1 | Out-Null }
+if ($node) { & $node.Source -e 'const fs = require(`fs`), f = require(`path`).join(require(`os`).homedir(), `.gemini`, `antigravity-cli`, `settings.json`); let j; try { j = JSON.parse(fs.readFileSync(f, `utf8`)); } catch { process.exit(); } const a = j.permissions?.allow; if (!Array.isArray(a) || !a.includes(`mcp(orbit/*)`)) process.exit(); j.permissions.allow = a.filter((x) => x !== `mcp(orbit/*)`); fs.writeFileSync(f, JSON.stringify(j, null, 2) + `\n`);' 2>$null | Out-Null }
+
 # 2. Your data
 $choice = if ($Backup) { '2' } elseif ($DeleteData) { '3' } else { '1' }
 if (-not $Backup -and -not $DeleteData -and (Test-Path $Data)) {

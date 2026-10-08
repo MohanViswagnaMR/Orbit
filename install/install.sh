@@ -47,24 +47,39 @@ MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
 [ "$MAJOR" -ge 24 ] || fail "Orbit needs Node.js 24 or newer; you have $(node --version). Update it from https://nodejs.org, then run this again."
 ok "Node.js $(node --version)"
 
-# 2. Claude Code, which your team runs on
-command -v claude >/dev/null 2>&1 || fail "Claude Code isn't installed. Install it with:  curl -fsSL https://claude.ai/install.sh | bash
-    then run  claude  once and log in, then run this installer again."
-CLAUDE="$(command -v claude)"
-ok "Claude Code $(claude --version 2>/dev/null | head -1)"
+# 2. The AI your team runs on: Claude Code (Claude), the Codex CLI (ChatGPT) or the Antigravity CLI (Gemini). One is enough.
+bin() { command -v "$1" 2>/dev/null || { [ -x "$HOME/.local/bin/$1" ] && echo "$HOME/.local/bin/$1"; } || true; }
+name() { case "$1" in claude) echo "Claude (Claude Code)" ;; gpt) echo "ChatGPT (Codex CLI)" ;; gemini) echo "Gemini (Antigravity CLI)" ;; esac; }
+CLAUDE="$(bin claude)"; CODEX="$(bin codex)"; AGY="$(bin agy)"; FOUND=""
+if [ -n "$CLAUDE" ]; then ok "Claude Code $("$CLAUDE" --version 2>/dev/null | head -1)"; FOUND="$FOUND claude"; fi
+if [ -n "$CODEX" ]; then
+  if "$CODEX" login status 2>&1 | grep -qi "logged in"; then ok "Codex CLI, signed in (ChatGPT)"; FOUND="$FOUND gpt"
+  else echo "  ○ The Codex CLI is installed but not signed in. To use ChatGPT, run  codex login  (then run this again, or switch it on later)."; fi
+fi
+if [ -n "$AGY" ]; then
+  if "$AGY" models 2>&1 | grep -q '^gemini-'; then ok "Antigravity CLI, signed in (Gemini)"; FOUND="$FOUND gemini"
+  else echo "  ○ The Antigravity CLI is installed but not signed in. To use Gemini, run  agy  once and sign in with Google."; fi
+fi
+[ -n "$FOUND" ] || fail "Orbit needs one AI to run your team, and none was found. Install one and sign in, then run this again:
+      Claude:   curl -fsSL https://claude.ai/install.sh | bash      then run  claude  once and log in
+      ChatGPT:  brew install --cask codex                            then run  codex login
+      Gemini:   install Google Antigravity (antigravity.google)      then run  agy  once and sign in with Google"
 
 # 3. Copy the app to its own folder (so it runs no matter where you downloaded it)
 mkdir -p "$APP" "$DATA"
 if [ "$SRC" != "$APP" ]; then
-  cp "$SRC/server.js" "$SRC/index.html" "$SRC/backup.mjs" "$SRC/package.json" "$APP/"
+  cp "$SRC/server.js" "$SRC/index.html" "$SRC/backup.mjs" "$SRC/mcp-bridge.mjs" "$SRC/package.json" "$APP/"
   rm -rf "$APP/brand" && cp -R "$SRC/brand" "$APP/brand"
+  rm -rf "$APP/skills" && cp -R "$SRC/skills" "$APP/skills" # Orbit's core skills
   [ -f "$SRC/README.md" ] && cp "$SRC/README.md" "$APP/"
 fi
 ok "App in $APP"
 ok "Your data in $DATA"
 
-# A PATH the background service can use: where node and claude live, plus the usual places.
-SVC_PATH="$(dirname "$NODE"):$(dirname "$CLAUDE"):$HOME/.local/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
+# A PATH the background service can use: where node and your AI apps live, plus the usual places.
+SVC_PATH="$(dirname "$NODE")"
+for B in "$CLAUDE" "$CODEX" "$AGY"; do [ -n "$B" ] && SVC_PATH="$SVC_PATH:$(dirname "$B")"; done
+SVC_PATH="$SVC_PATH:$HOME/.local/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
 
 # 4. Your data: use what's there, start fresh, or restore a backup. Orbit is stopped first, so nothing is in use.
 if [ "$OS" = "Darwin" ]; then launchctl bootout "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || true
@@ -74,6 +89,7 @@ else
 fi
 sleep 0.5
 RESTORE="${ORBIT_RESTORE:-}"
+FRESH=1 # a new team: ask which AI runs it (an existing team keeps its choice)
 HAVE="$(node "$SRC/backup.mjs" info "$DATA" 2>/dev/null || echo null)"
 if WHAT="$(describe "$HAVE" 2>/dev/null)"; then
   echo
@@ -84,8 +100,8 @@ if WHAT="$(describe "$HAVE" 2>/dev/null)"; then
   echo "    3) Restore a backup file instead"
   case "$(ask 'Choose 1, 2 or 3 [1]:' 1)" in
     2) ok "Old data moved to $(node "$SRC/backup.mjs" aside "$DATA")"; mkdir -p "$DATA"; ok "Starting fresh" ;;
-    3) RESTORE="$(clean_path "$(ask 'Drag the backup file here and press Enter:' '')")"; [ -n "$RESTORE" ] || fail "No backup file given. Nothing was changed; run the installer again." ;;
-    *) ok "Using your data" ;;
+    3) RESTORE="$(clean_path "$(ask 'Drag the backup file here and press Enter:' '')")"; [ -n "$RESTORE" ] || fail "No backup file given. Nothing was changed; run the installer again."; FRESH="" ;;
+    *) ok "Using your data"; FRESH="" ;;
   esac
 elif [ -z "$RESTORE" ] && [ -t 0 ]; then
   echo
@@ -100,8 +116,20 @@ if [ -n "$RESTORE" ]; then
   if [ -d "$DATA" ] && [ -n "$(ls -A "$DATA" 2>/dev/null)" ]; then ok "Data that was here moved to $(node "$SRC/backup.mjs" aside "$DATA")"; fi
   node "$SRC/backup.mjs" restore "$RESTORE" "$DATA" >/dev/null || fail "Couldn't restore that backup. Nothing was lost: your file is unchanged."
   ok "Restored $WHAT"
+  FRESH=""
 fi
 mkdir -p "$DATA"
+# Which AI runs a new team, when there's more than one here. Orbit picks by itself otherwise (Claude first).
+MAIN=""
+set -- $FOUND
+if [ -n "$FRESH" ] && [ $# -gt 1 ]; then
+  echo
+  say "  Which AI should run your team? You can switch on the others too, or change this later in Settings → Connectors."
+  i=1; for E in "$@"; do echo "    $i) $(name "$E")"; i=$((i + 1)); done
+  N="$(ask "Choose 1 to $# [1]:" 1)"
+  case "$N" in [1-9]) [ "$N" -le $# ] && eval "MAIN=\${$N}" ;; esac
+  MAIN="${MAIN:-$1}"
+fi
 if command -v curl >/dev/null 2>&1 && curl -fs -o /dev/null "http://localhost:$PORT/api/state"; then
   fail "Something else is already using port $PORT (maybe another copy of Orbit). Install with another port, e.g.  ORBIT_PORT=4400 bash install/install.sh"
 fi
@@ -138,7 +166,7 @@ else
     mkdir -p "$UNIT_DIR"
     cat > "$UNIT_DIR/orbit.service" <<UNIT
 [Unit]
-Description=Orbit, your personal team of Claude employees
+Description=Orbit, your personal team of AI employees
 
 [Service]
 WorkingDirectory=$APP
@@ -165,7 +193,7 @@ UNIT
 [Desktop Entry]
 Type=Application
 Name=Orbit
-Comment=Your personal team of Claude employees
+Comment=Your personal team of AI employees
 Exec=env PATH=$SVC_PATH PORT=$PORT ORBIT_DATA=$DATA sh -c 'cd "$APP" && exec "$NODE" server.js >> "$DATA/server.log" 2>&1'
 X-GNOME-Autostart-enabled=true
 NoDisplay=true
@@ -189,6 +217,12 @@ if command -v curl >/dev/null 2>&1 && ! curl -fs -o /dev/null "$URL/api/state"; 
   fail "Orbit didn't start. See $DATA/server.log for why, or ask for help with what it says."
 fi
 ok "Orbit is running at $URL"
+if [ -n "$MAIN" ]; then
+  if WHY="$(node -e 'fetch(process.argv[1] + "/api/connectors", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ main: process.argv[2] }) })
+      .then(async (r) => { if (!r.ok) { console.log((await r.json()).error); process.exit(1); } }, () => { console.log("Orbit did not answer"); process.exit(1); })' "$URL" "$MAIN" 2>&1)"; then
+    ok "Your team runs on $(name "$MAIN")"
+  else echo "  ○ Couldn't make $(name "$MAIN") the main AI: $WHY  (change it in Settings → Connectors)"; fi
+fi
 
 if [ "${ORBIT_NO_OPEN:-}" != "1" ]; then
   if [ "$OS" = "Darwin" ]; then open "$URL"; elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$URL" >/dev/null 2>&1 || true; fi

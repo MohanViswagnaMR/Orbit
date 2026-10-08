@@ -1,4 +1,4 @@
-// Orbit: your personal team of Claude employees. Runs on macOS, Windows and Linux. Start it with: node server.js
+// Orbit: your personal team of AI employees (on Claude, ChatGPT or Gemini). Runs on macOS, Windows and Linux. Start it with: node server.js
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -7,7 +7,7 @@ import crypto from 'node:crypto';
 import readline from 'node:readline';
 import { spawn, execFile } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
-import { makeBackup } from './backup.mjs';
+import { makeBackup, PARTS, partSizes } from './backup.mjs';
 
 const DIR = import.meta.dirname; // the code
 // Your data lives apart from the code: the database, log, notes, project memories and employees' work folders.
@@ -39,8 +39,7 @@ const ACCESS_TEXT = {
 // Claude Code's own task list and scheduling tools would bypass Orbit, and some reach your cloud account.
 const BLOCKED_TOOLS = ['TaskCreate', 'TaskGet', 'TaskList', 'TaskUpdate', 'TaskStop', 'CronCreate', 'CronDelete', 'CronList',
   'ScheduleWakeup', 'RemoteTrigger', 'PushNotification', 'SendMessage', 'ListAgents', 'Workflow'];
-const MODELS = ['sonnet', 'opus', 'haiku', 'fable'];
-const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']; // how hard Claude thinks; more effort = slower and uses more of your plan
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']; // how hard they think; more effort = slower and uses more of your plan
 // What each employee may do besides files (files are ACCESS above). You set these in Settings; "on" is the default.
 const PERMS = {
   web: { label: 'Search and read the web', on: true },
@@ -108,6 +107,7 @@ for (const sql of [
   "ALTER TABLE employees ADD COLUMN skills TEXT NOT NULL DEFAULT '[]'", // JSON ids of the skills you gave them
   'ALTER TABLE messages ADD COLUMN attachments TEXT', // JSON files you attached to a message: [{ path, name, size, how: 'upload' | 'file' }]
   'ALTER TABLE messages ADD COLUMN questions TEXT', // JSON questions a reply asks the owner (ask_owner), shown as a form
+  'ALTER TABLE messages ADD COLUMN skills TEXT', // JSON names of the skills a reply used, shown under it
 ]) try { db.exec(sql); } catch {}
 db.exec('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
 // employees.role holds the job description. employees.model may be 'default' (= the default model in Settings).
@@ -125,10 +125,10 @@ const setTask = (id, fields) => {
   exec(`UPDATE tasks SET ${keys.map((k) => `${k} = ?`).join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
     ...keys.map((k) => fields[k]), id);
 };
-const say = (taskId, kind, author, text, activity = '', { model = null, effort = null, files = null, questions = null, attachments = null } = {}) =>
-  exec('INSERT INTO messages (task_id, kind, author, text, activity, model, effort, files, questions, attachments) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+const say = (taskId, kind, author, text, activity = '', { model = null, effort = null, files = null, questions = null, attachments = null, skills = null } = {}) =>
+  exec('INSERT INTO messages (task_id, kind, author, text, activity, model, effort, files, questions, attachments, skills) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     taskId, kind, author, text, activity, model, effort, files?.length ? JSON.stringify(files) : null, questions?.length ? JSON.stringify(questions) : null,
-    attachments?.length ? JSON.stringify(attachments) : null);
+    attachments?.length ? JSON.stringify(attachments) : null, skills?.length ? JSON.stringify(skills) : null);
 const appendLog = (id, text) => exec('UPDATE tasks SET log = log || ? WHERE id = ?', text, id);
 const task = (id) => one('SELECT * FROM tasks WHERE id = ?', id);
 const employee = (id) => one('SELECT * FROM employees WHERE id = ?', id);
@@ -195,10 +195,10 @@ function openOnComputer(file, reveal) {
   execFile('xdg-open', [reveal ? path.dirname(file) : file]); // Linux file managers can't select a file, so open its folder
 }
 const depth = (t) => (t.kind === 'chat' ? 0 : t.parent_id ? 1 + depth(task(t.parent_id)) : 1);
-const SETTINGS = { default_model: 'sonnet', default_effort: '', global_rules: '', boss_rules: '', owner_name: '', main_assistant: '', appearance: '{}', picture_cost: '0', owner_avatar: '', mac_folders: '[]' }; // mac_folders: Desktop/Documents/Downloads you let Orbit into // owner_avatar: '<ext>:<version>' of avatars/me.<ext> // main_assistant: an employee id // default_effort '' = Claude Code's own default
+const SETTINGS = { default_model: 'sonnet', default_effort: '', global_rules: '', boss_rules: '', owner_name: '', main_assistant: '', appearance: '{}', picture_cost: '0', owner_avatar: '', mac_folders: '[]', picture_style: 'pixel', picture_model: 'sonnet', connectors: '{}', main_engine: '' }; // picture_style/_model: what you drew with last; new hires get the same // mac_folders: Desktop/Documents/Downloads you let Orbit into // owner_avatar: '<ext>:<version>' of avatars/me.<ext> // main_assistant: an employee id // default_effort '' = Claude Code's own default
 const setting = (k) => one('SELECT value FROM settings WHERE key = ?', k)?.value ?? SETTINGS[k];
 const setSetting = (k, v) => exec('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', k, v);
-const modelFor = (t, e) => t.model || (MODELS.includes(e.model) ? e.model : setting('default_model'));
+const modelFor = (t, e) => t.model || (e.model && e.model !== 'default' ? e.model : setting('default_model') || 'auto'); // 'default' = from before Auto
 const effortFor = (t, e) => t.effort || (EFFORTS.includes(e.effort) ? e.effort : setting('default_effort')); // '' = no flag
 export const permsOf = (e) => {
   let p = {};
@@ -208,7 +208,8 @@ export const permsOf = (e) => {
 const bossOf = (e) => (e.reports_to ? employee(e.reports_to) : null);
 // True when `e` is `boss` or anywhere under them in the org chart.
 // ---------- skills: what you make in Orbit, plus the skills installed in your Claude Code. Each person gets only theirs. ----------
-const SKILLS_DIR = path.join(DATA, 'skills'), CLAUDE_HOME = process.env.CREW_CLAUDE_HOME || path.join(os.homedir(), '.claude');
+const CORE_DIR = path.join(DIR, 'skills'); // Orbit's own skills, part of the app: everyone has them
+const SKILLS_DIR = path.join(DATA, 'skills'), GITHUB_DIR = path.join(DATA, 'skills-github'), CLAUDE_HOME = process.env.CREW_CLAUDE_HOME || path.join(os.homedir(), '.claude');
 export function readSkillMd(text) { // the frontmatter (name, description) and the instructions under it
   const m = String(text ?? '').replace(/\r/g, '').match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
   const meta = {};
@@ -217,7 +218,7 @@ export function readSkillMd(text) { // the frontmatter (name, description) and t
 }
 const skillsIn = (dir, group, idOf) => { // every <dir>/*/SKILL.md
   let names = [];
-  try { names = fs.readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory() || d.isSymbolicLink()).map((d) => d.name); } catch {}
+  try { names = fs.readdirSync(dir, { withFileTypes: true }).filter((d) => (d.isDirectory() || d.isSymbolicLink()) && !d.name.startsWith('.')).map((d) => d.name); } catch {} // .name = still being copied in
   return names.flatMap((n) => {
     let text;
     try { text = fs.readFileSync(path.join(dir, n, 'SKILL.md'), 'utf8'); } catch { return []; }
@@ -231,7 +232,9 @@ const pluginsIn = (dir) => { // folders that are Claude Code plugins: .claude-pl
   return names.flatMap((n) => { try { return [{ name: JSON.parse(fs.readFileSync(path.join(dir, n, '.claude-plugin', 'plugin.json'), 'utf8')).name || n, dir: path.join(dir, n) }]; } catch { return []; } });
 };
 export function findSkills() {
-  const out = [...skillsIn(SKILLS_DIR, 'Made in Orbit', (n) => `orbit/${n}`).map((x) => ({ ...x, mine: true })), ...skillsIn(path.join(CLAUDE_HOME, 'skills'), 'Your Claude skills', (n) => `user/${n}`)];
+  const out = [...skillsIn(CORE_DIR, 'Orbit core', (n) => `core/${n}`).map((x) => ({ ...x, core: true })),
+    ...skillsIn(SKILLS_DIR, 'Made in Orbit', (n) => `orbit/${n}`).map((x) => ({ ...x, mine: true })), ...skillsIn(GITHUB_DIR, 'From GitHub', (n) => `github/${n}`),
+    ...skillsIn(path.join(CLAUDE_HOME, 'skills'), 'Your Claude skills', (n) => `user/${n}`)];
   let synced = [];
   try { synced = fs.readdirSync(path.join(CLAUDE_HOME, 'skills', 'synced')); } catch {}
   for (const acct of synced) out.push(...skillsIn(path.join(CLAUDE_HOME, 'skills', 'synced', acct), 'Your Claude skills', (n) => `user/${n}`));
@@ -247,9 +250,9 @@ export function findSkills() {
 export const skillsOf = (e) => { try { return [].concat(JSON.parse(e.skills || '[]')).map(String); } catch { return []; } };
 // The skills a person has, as a one-run plugin: links to each skill's folder, so nothing is copied.
 function skillPlugin(e) {
-  const mine = skillsOf(e);
+  const all = findSkills(), mine = [...all.filter((x) => x.core).map((x) => x.id), ...skillsOf(e)]; // the core ones, then the ones you gave them
   if (!mine.length) return null;
-  const known = new Map(findSkills().map((x) => [x.id, x])), dir = path.join(DATA, 'skillsets', `${e.id}-${crypto.randomBytes(4).toString('hex')}`), used = new Set();
+  const known = new Map(all.map((x) => [x.id, x])), dir = path.join(DATA, 'skillsets', `${e.id}-${crypto.randomBytes(4).toString('hex')}`), used = new Set();
   fs.mkdirSync(path.join(dir, '.claude-plugin'), { recursive: true });
   fs.mkdirSync(path.join(dir, 'skills'));
   fs.writeFileSync(path.join(dir, '.claude-plugin', 'plugin.json'), JSON.stringify({ name: 'orbit', version: '1.0.0', description: `The skills you gave ${e.name}` }));
@@ -279,11 +282,252 @@ export function saveSkill(b) {
 }
 export function assignSkill(id, employeeIds) {
   if (!findSkills().some((x) => x.id === id)) throw new Error('That skill is gone.');
+  if (id.startsWith('core/')) throw new Error("Everyone has Orbit's core skills.");
   const want = new Set([].concat(employeeIds ?? []).map(Number));
   for (const e of all('SELECT * FROM employees')) {
     const has = skillsOf(e), on = want.has(e.id);
     if (on !== has.includes(id)) exec('UPDATE employees SET skills = ? WHERE id = ?', JSON.stringify(on ? [...has, id] : has.filter((x) => x !== id)), e.id);
   }
+}
+// ---------- skills from GitHub: a link to a repository, a folder in it or a SKILL.md. Every skill under it is copied in (again = updated). ----------
+export function parseGithubUrl(u) {
+  const m = String(u ?? '').trim().match(/^https?:\/\/(?:www\.)?github\.com\/([\w.-]+)\/([\w.-]+?)(?:\.git)?(?:\/(?:tree|blob)\/([^/?#]+)(?:\/([^?#]*?))?)?\/?(?:[?#].*)?$/);
+  if (!m) throw new Error('Paste a GitHub link, like https://github.com/anthropics/skills, or a folder in it.');
+  return { owner: m[1], repo: m[2], ref: m[3] || 'HEAD', dir: (m[4] || '').replace(/\/?SKILL\.md$/i, '').replace(/\/+$/, '') };
+}
+async function githubSkills(url) {
+  const { owner, repo, ref, dir } = parseGithubUrl(url);
+  const get = async (u) => {
+    const r = await fetch(u, { headers: { 'User-Agent': 'Orbit' }, signal: AbortSignal.timeout(30000) }).catch(() => null);
+    if (!r) throw new Error("Couldn't reach GitHub. Check your internet connection.");
+    if (r.ok) return r;
+    throw new Error(r.status === 404 ? "Couldn't find that on GitHub. Check the link, and that the repository is public."
+      : r.status === 403 || r.status === 429 ? 'GitHub asks to slow down. Try again in a few minutes.' : `GitHub answered with an error (${r.status}).`);
+  };
+  const tree = (await (await get(`https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(ref)}?recursive=1`)).json()).tree ?? [];
+  const files = tree.filter((x) => x.type === 'blob' && (!dir || x.path.startsWith(dir + '/')));
+  const roots = files.filter((x) => /(^|\/)SKILL\.md$/.test(x.path)).map((x) => path.posix.dirname(x.path));
+  if (!roots.length) throw new Error('No skills there: a skill is a folder with a SKILL.md in it.');
+  if (roots.length > 50) throw new Error(`That has ${roots.length} skills. Link to the folder of the ones you want (at most 50 at a time).`);
+  const added = [];
+  for (const root of roots) {
+    const mine = files.filter((x) => root === '.' || x.path.startsWith(root + '/'));
+    if (mine.length > 200 || mine.reduce((n, x) => n + (x.size || 0), 0) > 10e6) throw new Error(`The skill in ${root === '.' ? repo : root} is too big to copy (over 200 files or 10 MB).`);
+    const raw = (p) => get(`https://raw.githubusercontent.com/${owner}/${repo}/${encodeURIComponent(ref)}/${p.split('/').map(encodeURIComponent).join('/')}`);
+    const md = readSkillMd(await (await raw(root === '.' ? 'SKILL.md' : `${root}/SKILL.md`)).text());
+    const slug = skillSlug(md.name || (root === '.' ? repo : path.posix.basename(root)));
+    if (!slug || !md.description) throw new Error(`The SKILL.md in ${root === '.' ? repo : root} has no name or description.`);
+    const into = path.join(GITHUB_DIR, `.${slug}-${crypto.randomBytes(4).toString('hex')}`); // filled in fully, then put in place
+    try {
+      for (const f of mine) {
+        const out = path.join(into, root === '.' ? f.path : f.path.slice(root.length + 1));
+        if (!out.startsWith(into + path.sep)) continue; // a path that tries to climb out stays out
+        fs.mkdirSync(path.dirname(out), { recursive: true });
+        fs.writeFileSync(out, Buffer.from(await (await raw(f.path)).arrayBuffer()));
+      }
+      fs.rmSync(path.join(GITHUB_DIR, slug), { recursive: true, force: true });
+      fs.renameSync(into, path.join(GITHUB_DIR, slug));
+    } finally { fs.rmSync(into, { recursive: true, force: true }); }
+    added.push(slug);
+  }
+  return { added, ids: added.map((slug) => `github/${slug}`) };
+}
+
+// Skills whose name or description share words with `query`, best first, scoring at least `min`. Core skills are left out: everyone has them.
+// ponytail: plain word matching; ask Claude to pick if it misses good skills too often
+const SKIP_WORDS = new Set('the and for you your our are can with this that from into about then them they their have has need want make please just also some any all its it what when how who why use using get got new one dont don yourself hand out'.split(' '));
+export function searchSkills(query, min = 1) {
+  const stem = (w) => (w.length > 4 ? w.replace(/(ing|ers|er|ed|es|s)$/, '') : w);
+  const words = [...new Set(String(query ?? '').toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !SKIP_WORDS.has(w)).map(stem))];
+  if (!words.length) throw new Error('Say in a few words what the work is.');
+  return findSkills().filter((x) => !x.core).map((x) => {
+    const name = x.name.toLowerCase(), text = `${name} ${x.description.toLowerCase()}`;
+    return { x, score: words.filter((w) => text.includes(w)).length + words.filter((w) => name.includes(w)).length };
+  }).filter((h) => h.score >= min).sort((p, q) => q.score - p.score).slice(0, 8).map((h) => h.x);
+}
+// Claude's answer for autoSkills: { "<person id>": ["<skill id>", ...] }, kept to skills that exist, at most 8 each.
+export function pickSkills(text, people, skills) {
+  const known = new Set(skills.map((x) => x.id));
+  let j = {};
+  try { j = JSON.parse(String(text ?? '').match(/\{[\s\S]*\}/)?.[0] ?? '{}'); } catch {}
+  return Object.fromEntries(people.map((e) => [e.id, [...new Set([].concat(j?.[e.id] ?? []).map(String))].filter((id) => known.has(id)).slice(0, 8)]));
+}
+// Claude reads each person's job and the skill library, and gives them the skills that fit (Haiku: a cent or two).
+// It only adds, never takes away; a skill you removed by hand can come back if you run it again.
+async function autoSkills(people) {
+  const skills = findSkills().filter((x) => !x.core), picks = await matchSkills(people, skills), added = {}; // everyone has the core ones already
+  for (const p of people) {
+    const e = employee(p.id), has = skillsOf(e), more = (picks[p.id] ?? []).filter((id) => !has.includes(id)).slice(0, Math.max(0, 8 - has.length)); // never past 8 by itself
+    if (more.length) exec('UPDATE employees SET skills = ? WHERE id = ?', JSON.stringify([...has, ...more]), e.id);
+    added[e.name] = more.map((id) => skills.find((x) => x.id === id).name);
+  }
+  return added;
+}
+// Claude's picks of which of `skills` each person needs: { "<person id>": ["<skill id>", ...] }. Changes nothing.
+async function matchSkills(people, skills) {
+  if (!skills.length || !people.length) return {};
+  const line = (t, max) => String(t ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
+  const prompt = [
+    "Match skills to the people on my team. Give each person the skills that clearly help with their job, and none that don't.", '',
+    'People:', ...people.map((e) => `- id ${e.id}: ${e.name}, ${e.title || 'no title'}. ${line(e.role, 500)}`), '',
+    'Skills (id: when to use it):', ...skills.map((x) => `- ${x.id}: ${line(x.description, 220)}`), '',
+    'Reply with only JSON, no other text, like {"3": ["orbit/write-blog-posts"], "5": []}: every person id above, each with at most 8 skill ids from the list.',
+  ].join('\n');
+  const result = await askAI({}, DATA, prompt, baseModel('light'), 3 * 60 * 1000);
+  if (!result || result.is_error) throw new Error(`Couldn't match the skills: ${result?.result || 'no answer'}`);
+  return pickSkills(result.result, people, skills);
+}
+
+// ---------- hire with help: Orbit's own hiring assistant (not one of your team) interviews you in rounds, proposes people, you choose, Orbit hires ----------
+const HIRING_ROUNDS = 3;
+async function hiringStep(rounds) {
+  const team = all('SELECT * FROM employees WHERE archived_at IS NULL ORDER BY name'), last = rounds.length >= HIRING_ROUNDS, owner = setting('owner_name').trim() || 'the owner';
+  const line = (t, max) => String(t ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
+  const prompt = [
+    "You are Orbit's hiring assistant. Orbit is the owner's personal company of AI employees: each employee is Claude with a name, a job, a personality and a boss. You help the owner hire the right people. You are not one of the employees.",
+    `The owner is ${owner}.`,
+    team.length ? `The team today:\n${team.map((e) => `- ${e.name}, ${e.title || 'no title'}, reports to ${bossOf(e)?.name ?? owner}: ${line(e.role, 160)}`).join('\n')}`
+      : 'The team is empty: this is the first hire. The first person in your plan becomes the owner\'s main assistant, who reports to the owner: the one they talk to first, ' +
+        'who runs the team for them, hands work to the right people, hires when the team needs someone, and reports back clearly. Ask what the owner most wants help with, ' +
+        'and shape the main assistant around it. Propose more people only if the owner wants a team straight away.',
+    rounds.length ? `The interview so far:\n${rounds.flat().map((x) => `Q: ${x.question}\nA: ${x.answer || '(skipped)'}`).join('\n')}` : '',
+    'How you work:\n' +
+      '1. Interview first, in rounds of 3 or 4 questions, each with 2 to 5 short options (the owner can also type their own answer). ' +
+      'Round 1: what they are working on and want to achieve, where they need help most, and how many people they have in mind. ' +
+      'Later rounds follow up on what they said: the work in more detail, how independently the new people should work, style and tone, and who they should report to. Never ask something you already know.\n' +
+      `2. When you know enough (after at most ${HIRING_ROUNDS} rounds), propose the hires: only roles that are clearly needed and not already covered by the team. A few well-defined people beat many vague ones.`,
+    last ? 'You have asked enough: propose the hires now.' : `This is round ${rounds.length + 1} of at most ${HIRING_ROUNDS}.`,
+    'Reply with only JSON, no other text, in one of these two shapes:\n' +
+      '{"questions": [{"question": "...", "multi": false, "options": [{"label": "...", "description": "..."}]}]}\n' +
+      `{"summary": "one or two sentences: the plan and why", "hires": [{"name": "OneWord", "title": "...", "job_description": "You are ... (4 to 8 sentences: what they do, how they work, what good work looks like)", "personality": "...", "reports_to": "owner, or a current teammate's name, or another new hire's name", "model": "auto", "file_access": "read", "why": "one sentence"}]}\n` +
+      `Names: one word, friendly, not already on the team. file_access: read for advice and research, edit for people who make or change files, full only when clearly needed. model: auto (Orbit picks the best one for each piece of work). At most ${LIMITS.hiresPerTurn} hires.`,
+  ].filter(Boolean).join('\n\n');
+  const result = await askAI({}, DATA, prompt, baseModel('standard'), 4 * 60 * 1000);
+  if (!result || result.is_error) throw new Error(`The hiring assistant couldn't answer: ${result?.result || 'no answer'}`);
+  return readHiring(result.result, last);
+}
+// The hiring assistant's answer: more questions, or the plan (kept to what Orbit can hire).
+export function readHiring(text, last) {
+  let j = null;
+  try { j = JSON.parse(String(text ?? '').match(/\{[\s\S]*\}/)?.[0]); } catch {}
+  if (!last && j?.questions) return { questions: cleanQuestions(j.questions) };
+  const str = (v, max) => String(v ?? '').trim().slice(0, max);
+  const hires = [].concat(j?.hires ?? []).slice(0, LIMITS.hiresPerTurn).map((h) => ({ name: str(h?.name, 30).replace(/\s+/g, ''), title: str(h?.title, 60),
+    job_description: str(h?.job_description, 5000), personality: str(h?.personality, 3000), reports_to: str(h?.reports_to, 30) || 'owner',
+    model: modelOk(h?.model) ? h.model : 'auto', file_access: ACCESS_ORDER.includes(h?.file_access) ? h.file_access : 'read', why: str(h?.why, 300) }))
+    .filter((h) => h.name && h.job_description);
+  if (!hires.length) throw new Error("The hiring assistant didn't come back with a plan. Try again.");
+  return { summary: str(j.summary, 600), hires };
+}
+// Hire everyone you kept. Someone reporting to another new hire waits until that person exists.
+export function hireAll(list) {
+  const hires = [].concat(list ?? []).filter((h) => h?.name);
+  if (!hires.length) throw new Error('Pick at least one person to hire.');
+  if (one('SELECT count(*) AS n FROM employees').n + hires.length > LIMITS.team) throw new Error(`That would make the company bigger than ${LIMITS.team} people.`);
+  const names = hires.map((h) => String(h.name).trim()), lower = (x) => String(x ?? '').trim().toLowerCase();
+  for (const n of names) {
+    if (!/^[\w-]{1,30}$/.test(n)) throw new Error(`"${n}" won't work as a name: one word, with letters, numbers, - or _.`);
+    if (one('SELECT 1 FROM employees WHERE lower(name) = ?', lower(n))) throw new Error(`You already have someone called ${n}. Pick another name.`);
+  }
+  for (const h of hires) if (!String(h.job_description ?? '').trim()) throw new Error(`Write ${h.name}'s job description.`); // checked first, so nobody is half hired
+  if (new Set(names.map(lower)).size < names.length) throw new Error('Two of them have the same name.');
+  const made = [], left = [...hires];
+  for (let pass = 0; left.length; pass++) for (const h of [...left]) {
+    const to = lower(h.reports_to), waiting = pass < 5 && left.some((x) => x !== h && lower(x.name) === to); // after a few passes, a circle of bosses ends at you
+    if (waiting) continue;
+    const boss = to && to !== 'owner' && to !== lower(setting('owner_name')) ? one('SELECT id FROM employees WHERE lower(name) = ?', to) : null;
+    const { id } = saveEmployee({ name: h.name, title: h.title, role: h.job_description, personality: h.personality, reports_to: boss?.id ?? null,
+      model: modelOk(h.model) ? h.model : 'auto', effort: 'default', access: ACCESS_ORDER.includes(h.file_access) ? h.file_access : 'read' });
+    made.push({ id, name: String(h.name).trim() });
+    left.splice(left.indexOf(h), 1);
+  }
+  return { hired: made };
+}
+const cleanRounds = (rounds) => [].concat(rounds ?? []).slice(0, HIRING_ROUNDS).map((r) => [].concat(r ?? []).slice(0, 6)
+  .map((x) => ({ question: String(x?.question ?? '').slice(0, 300), answer: String(x?.answer ?? '').slice(0, 1000) })));
+
+// ---------- a teammate as one file: give a copy to a friend, who imports them into their own Orbit ----------
+const skillFiles = (dir, base = dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((d) => (d.name.startsWith('.') ? [] // every file in a skill's folder
+  : d.isDirectory() ? skillFiles(path.join(dir, d.name), base) : d.isFile() ? [path.relative(base, path.join(dir, d.name)).split(path.sep).join('/')] : []));
+// What travels with a person: who they are, and (if you say so) their picture and notes. Their chats and work stay with you.
+const personFile = (e, { picture, notes }) => ({
+  person: { name: e.name, title: e.title, role: e.role, personality: e.personality, rules: e.rules, model: e.model, effort: e.effort, access: e.access },
+  picture: picture && e.avatar ? readFile(path.join(AVATAR_DIR, `${e.id}.svg`)) || null : null,
+  notes: notes ? readFile(notesFile(e.name)) || null : null, // what they've learned, often about you: only when you say so
+});
+const skillFile = (x, who) => { // every file of a skill, so it works in another Orbit
+  const files = skillFiles(x.dir);
+  if (files.length > 200 || files.reduce((n, f) => n + fs.statSync(path.join(x.dir, f)).size, 0) > 10e6) throw new Error(`The ${x.name} skill is too big to include (over 200 files or 10 MB). Untick skills, or take it from ${who} first.`);
+  return { name: x.name, from: x.group, files: Object.fromEntries(files.map((f) => [f, fs.readFileSync(path.join(x.dir, f)).toString('base64')])) };
+};
+export function exportPerson(id, { picture = true, skills = true, notes = false } = {}) {
+  const e = employee(id);
+  if (!e) throw new Error('No such employee.');
+  const known = new Map(findSkills().map((x) => [x.id, x]));
+  return { orbit: 'teammate', version: 1, exported: new Date().toISOString(), ...personFile(e, { picture, notes }),
+    skills: !skills ? [] : skillsOf(e).map((sid) => known.get(sid)).filter(Boolean).map((x) => skillFile(x, e.name)) }; // not the core ones: everyone has those
+}
+// The whole team (not the archived): everyone, who reports to whom, and each skill once however many people use it.
+export function exportTeam({ picture = true, skills = true, notes = false } = {}) {
+  const team = all('SELECT * FROM employees WHERE archived_at IS NULL ORDER BY id'), known = new Map(findSkills().map((x) => [x.id, x])), used = new Map();
+  if (!team.length) throw new Error('There is nobody on your team to export yet.');
+  const people = team.map((e) => ({ ...personFile(e, { picture, notes }), reports_to: bossOf(e) && !bossOf(e).archived_at ? bossOf(e).name : null,
+    skills: !skills ? [] : skillsOf(e).map((sid) => known.get(sid)).filter(Boolean).map((x) => (used.set(x.id, x), x.name)) }));
+  return { orbit: 'team', version: 1, exported: new Date().toISOString(), main: employee(Number(setting('main_assistant')))?.name ?? null,
+    people, skills: [...used.values()].map((x) => skillFile(x, 'whoever has it')) };
+}
+// Put a skill from a file into this Orbit's own skills (made in Orbit); the same skill already here is shared. Its id, or null.
+function installSkill(k) {
+  const files = Object.entries(k?.files ?? {}).slice(0, 200), md = typeof k?.files?.['SKILL.md'] === 'string' ? Buffer.from(k.files['SKILL.md'], 'base64').toString('utf8') : '';
+  const slugBase = skillSlug(readSkillMd(md).name || k?.name);
+  if (!md || !slugBase || files.reduce((n, [, b64]) => n + String(b64).length * 0.75, 0) > 10e6) return null;
+  let slug = slugBase;
+  for (let i = 2; fs.existsSync(path.join(SKILLS_DIR, slug)) && readFile(path.join(SKILLS_DIR, slug, 'SKILL.md')) !== md; i++) slug = `${slugBase}-${i}`;
+  const dir = path.join(SKILLS_DIR, slug);
+  if (!fs.existsSync(dir)) for (const [f, b64] of files) {
+    const out = path.join(dir, String(f));
+    if (!out.startsWith(dir + path.sep)) continue; // a path that tries to climb out stays out
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    fs.writeFileSync(out, Buffer.from(String(b64), 'base64'));
+  }
+  return `orbit/${slug}`;
+}
+// Add one person from a file. Permissions to hire or change rules aren't copied, and full file access comes in as edit: those are yours to give.
+function addPerson(p, { picture, notes, skills = [], reports_to = null }) {
+  const base = String(p?.name ?? '').replace(/[^\w-]/g, '').slice(0, 26) || 'Teammate';
+  let name = base;
+  for (let i = 2; one('SELECT 1 FROM employees WHERE lower(name) = lower(?)', name); i++) name = `${base}${i}`; // the name is taken: Nova2
+  const svg = picture ? cleanSvg(String(picture)) : null;
+  const { id } = saveEmployee({ name, title: p.title, role: p.role, personality: p.personality, rules: p.rules, reports_to,
+    model: modelOk(p.model) ? p.model : 'auto', effort: EFFORTS.includes(p.effort) ? p.effort : 'default',
+    access: p.access === 'edit' || p.access === 'full' ? 'edit' : 'read', skills: [...new Set(skills)] }, undefined, { picture: !svg });
+  if (svg) { fs.mkdirSync(AVATAR_DIR, { recursive: true }); fs.writeFileSync(path.join(AVATAR_DIR, `${id}.svg`), svg); exec('UPDATE employees SET avatar = ? WHERE id = ?', String(Date.now()), id); }
+  if (notes) writeFile(notesFile(name), String(notes).slice(0, 200000));
+  return { id: Number(id), name, renamed: name !== p.name };
+}
+// A teammate or a whole team from a file someone exported. Skills are installed and given; the top people report to you.
+export function importPerson(text) {
+  let d = null;
+  try { d = typeof text === 'string' ? JSON.parse(text) : text; } catch {}
+  if (d?.orbit === 'team' && Array.isArray(d.people)) return importTeam(d);
+  if (d?.orbit !== 'teammate' || !d.person) throw new Error("That isn't an Orbit teammate or team file. Export one from a person's page or Settings → Team.");
+  const ids = [].concat(d.skills ?? []).slice(0, 30).map(installSkill).filter(Boolean);
+  return { ...addPerson(d.person, { picture: d.picture, notes: d.notes, skills: ids }), skills: ids.length };
+}
+function importTeam(d) {
+  const people = d.people.filter((x) => x?.person?.name && String(x.person.role ?? '').trim()), hadTeam = !!one('SELECT 1 FROM employees WHERE archived_at IS NULL');
+  if (!people.length) throw new Error('There is nobody in that team file.');
+  if (one('SELECT count(*) AS n FROM employees').n + people.length > LIMITS.team) throw new Error(`That would make the company bigger than ${LIMITS.team} people.`);
+  const skillIds = new Map([].concat(d.skills ?? []).slice(0, 100).map((k) => [k?.name, installSkill(k)]).filter(([, id]) => id));
+  const made = new Map(), left = [...people]; // their name in the file -> who they are here
+  for (let pass = 0; left.length; pass++) for (const x of [...left]) {
+    if (pass < 30 && x.reports_to && left.some((y) => y !== x && y.person.name === x.reports_to)) continue; // their boss first
+    made.set(x.person.name, addPerson(x.person, { picture: x.picture, notes: x.notes, skills: [].concat(x.skills ?? []).map((n) => skillIds.get(n)).filter(Boolean),
+      reports_to: made.get(x.reports_to)?.id ?? null }));
+    left.splice(left.indexOf(x), 1);
+  }
+  if (!hadTeam && made.has(d.main)) setSetting('main_assistant', String(made.get(d.main).id)); // nobody ran your team yet: theirs does
+  return { team: true, people: [...made.values()], skills: skillIds.size };
 }
 
 // ---------- the archive: chats, projects and people you're done with. Nothing is deleted; Restore brings them back. ----------
@@ -346,6 +590,7 @@ exec(`UPDATE tasks SET created_by = COALESCE(asked_by, 'me') WHERE created_by IS
 // Projects archived before their chats and tasks went with them: those go now, so Restore brings them back together.
 exec(`UPDATE tasks SET archived_at = (SELECT archived_at FROM projects p WHERE p.id = tasks.project_id)
   WHERE archived_at IS NULL AND project_id IN (SELECT id FROM projects WHERE archived_at IS NOT NULL)`);
+exec("UPDATE employees SET model = 'auto' WHERE model = 'default'"); // Auto took the place of Default: Orbit picks the model for each chat or task
 
 // ---------- memory: plain files you can open and edit ----------
 const readFile = (f) => { try { return fs.readFileSync(f, 'utf8'); } catch { return ''; } };
@@ -505,7 +750,14 @@ export function nextRun(s, after) {
   return d;
 }
 
-function systemPrompt(e, t, cwd) {
+// GPT and Gemini teammates can't ask for approval mid-turn: what their access doesn't allow is simply blocked.
+const OTHER_ACCESS = {
+  read: 'You can read files. Changing files or running commands is blocked, and nobody can approve it during your turn: if the work needs it, say so in your reply.',
+  edit: 'You can read and edit files in your working folder. Anything beyond your access is blocked, and nobody can approve it during your turn: if the work needs more, say so in your reply.',
+  full: 'You can read and edit files and run commands.',
+};
+function systemPrompt(e, t, cwd, engine = 'claude') {
+  const claudeRun = engine === 'claude';
   const p = t.project_id && project(t.project_id), parent = t.parent_id && task(t.parent_id);
   const team = all('SELECT * FROM employees WHERE archived_at IS NULL ORDER BY name'), boss = bossOf(e), reports = team.filter((x) => x.reports_to === e.id);
   const perm = permsOf(e), canRules = perm.global_rules || perm.boss_rules || perm.team_rules;
@@ -515,6 +767,8 @@ function systemPrompt(e, t, cwd) {
   const toOwner = t.kind === 'chat' || !t.parent_id || ['me', 'schedule'].includes(t.created_by);
   const label = (x) => `${x.name}${x.title ? ` (${x.title})` : ''}`;
   const globalRules = setting('global_rules').trim(), bossRules = setting('boss_rules').trim(), owner = setting('owner_name').trim();
+  const skills = findSkills(), skillName = new Map(skills.map((x) => [x.id, x.name]));
+  const busy = new Set(all("SELECT DISTINCT employee_id FROM tasks WHERE status IN ('working', 'queued')").map((r) => r.employee_id));
   return [
     `You are ${e.name}${e.title ? `, ${e.title},` : ''} in a small personal company. The owner (your user) runs it; everyone works for them.` +
       (owner ? ` The owner wants to be called ${owner}; use that name when you address them or mention them.` : ''),
@@ -529,10 +783,14 @@ function systemPrompt(e, t, cwd) {
     globalRules ? `Global rules. Everyone follows these, always; they override anything else:\n${globalRules}` : '',
     e.rules.trim() ? `Your own rules:\n${e.rules.trim()}` : '',
     toOwner && bossRules ? `Rules for replying to the owner (this reply goes to them):\n${bossRules}` : '',
-    `${ACCESS_TEXT[e.access]}${perm.web ? '' : ' You cannot use the web.'}${perm.chrome ? ' You can use the owner\'s real Chrome browser through the Claude in Chrome tools. They are signed in there, so be careful: never send, post, buy or change account settings without their explicit OK.' : ''}${e.access === 'full' ? '' : ' Before something that needs the owner\'s OK, first say in one line why you need it: they see it in the approval popup.'}\nYour working folder: ${cwd}`,
+    claudeRun
+      ? `${ACCESS_TEXT[e.access]}${perm.web ? '' : ' You cannot use the web.'}${perm.chrome ? ' You can use the owner\'s real Chrome browser through the Claude in Chrome tools. They are signed in there, so be careful: never send, post, buy or change account settings without their explicit OK.' : ''}${e.access === 'full' ? '' : ' Before something that needs the owner\'s OK, first say in one line why you need it: they see it in the approval popup.'}\nYour working folder: ${cwd}`
+      : `You run on ${engineLabel(engine)}. ${OTHER_ACCESS[e.access]}${perm.web ? '' : ' Do not use the web.'}` +
+        (engine === 'gemini' && e.access !== 'full' ? ' You cannot run terminal commands (not even ls or python): a blocked command ends your turn. Use your file tools instead: list_dir, find_by_name, grep_search and view_file.' : '') +
+        `\nYour working folder: ${cwd}`,
     t.kind === 'chat'
       ? 'This is a chat with the owner: talk things through, answer questions, help plan. ' +
-        (perm.tasks ? 'When work should be done, put it on the board with create_task and assign the right person (or yourself). ' +
+        (perm.tasks ? 'When work should be done, hand it to the best person with create_task (follow orbit:delegate-work), or do it yourself if it is your job or quick. ' +
           'Tasks you create here report back to this chat when they are done: check the results, then tell the owner what was done. '
           : 'You are not allowed to create tasks; if work should be done, say so and the owner will assign it. ') +
         'If something important is unclear, ask the owner a short question.'
@@ -541,20 +799,30 @@ function systemPrompt(e, t, cwd) {
         (toOwner ? ' The owner reviews your result.' : ` ${t.created_by} gave it to you; your reply goes straight back to them.`) +
         '\nWhen you finish, reply with the result itself: the answer, the draft, or a short summary of what you changed and where. ' +
         (toOwner ? 'If something important is unclear, ask the owner a short question before doing the work. ' : 'If something is unclear, make a sensible assumption and say what you assumed. ') +
-        (perm.tasks ? 'If part of the work is better done by a teammate, give it to them with create_task (it becomes a subtask of this task), then stop: ' +
-          'their results come back to you and you continue. Do small things yourself instead of creating tasks for them.' : ''),
+        (perm.tasks ? 'If part of the work is better done by a teammate, give it to them with create_task (it becomes a subtask of this task; follow orbit:delegate-work), then stop: ' +
+          'their results come back to you and you continue. Do quick things yourself instead of creating tasks for them, and never hand work back up the chain it came from.' : ''),
     p ? `Project: ${p.name}\n${p.description}` +
       // ponytail: only the newest 10k characters of memory reach Claude; trim the file by hand if it ever gets that long
       (memory ? `\n\nProject memory (what the team has learned; the owner reads it to catch misunderstandings):\n${memory.slice(-10000)}` : '') : '',
-    team.length > 1 ? `The team:\n${team.filter((x) => x.id !== e.id).map((x) =>
-      `- ${label(x)}, reports to ${bossOf(x) ? (bossOf(x).id === e.id ? 'you' : bossOf(x).name) : 'the owner'}: ${x.role.split('\n')[0].slice(0, 120)}`).join('\n')}` : '',
+    team.length > 1 ? `The team (skills and who's busy help you pick the best person):\n${team.filter((x) => x.id !== e.id).map((x) =>
+      `- ${label(x)}, reports to ${bossOf(x) ? (bossOf(x).id === e.id ? 'you' : bossOf(x).name) : 'the owner'}: ${x.role.split('\n')[0].slice(0, 120)}` +
+      (busy.has(x.id) ? ' [busy right now]' : '') + (skillsOf(x).length ? ` Skills: ${skillsOf(x).map((id) => skillName.get(id)).filter(Boolean).join(', ')}.` : '')).join('\n')}` : '',
     t.kind === 'chat' && !p && all('SELECT 1 FROM projects WHERE archived_at IS NULL').length ? `Projects (for create_task): ${all('SELECT name FROM projects WHERE archived_at IS NULL ORDER BY name').map((x) => x.name).join(', ')}` : '',
     notes ? `Your notes from earlier work (your long-term memory; the owner may have edited them):\n${notes.slice(-12000)}` : '',
     recent.length ? `Your recently finished tasks, for context:\n${recent.map((r) =>
       `- "${r.title}": ${(r.result || '').slice(0, 300).replace(/\s+/g, ' ')}`).join('\n')}` : '',
-    (() => { const mine = new Set(skillsOf(e)), list = mine.size ? findSkills().filter((x) => mine.has(x.id)) : [];
-      return list.length ? `Your skills (use them when the work fits; they're named orbit:<name>):\n${list.map((x) => `- ${x.name}: ${x.description.slice(0, 200)}`).join('\n')}` : ''; })(),
-    'Orbit tools: ' + [perm.tasks && 'create_task puts work on the board and assigns it', 'list_tasks and get_task check the board',
+    (() => { const mine = new Set(skillsOf(e)), core = skills.filter((x) => x.core), list = skills.filter((x) => mine.has(x.id));
+      let found = [];
+      try { found = searchSkills(`${t.title}\n${t.next_prompt || t.body || ''}`.slice(0, 2000), 2).slice(0, 5); } catch {} // this turn's work, searched for you
+      return [found.length && `Skills in Orbit's collection that may help with this (Orbit searched it for you; use one only if it really fits):\n${found.map((x) =>
+        `- ${x.name}: ${x.description.slice(0, 200)} ${claudeRun && mine.has(x.id) ? `(you have it: orbit:${x.name})` : `(read_skill "${x.id}" gives you its instructions)`}`).join('\n')}`,
+        core.length && `Orbit's core skills. Everyone has them; they are how this team works, so use them at those moments:\n${core.map((x) => (claudeRun
+          ? `- orbit:${x.name}: ${x.description}` : `- ${x.name}: ${x.description} (read_skill "${x.id}")`)).join('\n')}` +
+          (claudeRun ? '' : '\nWherever this briefing says orbit:<name>, read that skill with read_skill (core skills are "core/<name>").'),
+        list.length && (claudeRun ? `Your other skills (use them when the work fits; they're named orbit:<name>):\n${list.map((x) => `- ${x.name}: ${x.description.slice(0, 200)}`).join('\n')}`
+          : `Your other skills (read one with read_skill when the work fits):\n${list.map((x) => `- ${x.name}: ${x.description.slice(0, 200)} (read_skill "${x.id}")`).join('\n')}`)].filter(Boolean).join('\n\n'); })(),
+    perm.tasks ? `Models you can give work to (create_task's model; pick with orbit:choose-model): ${availableModels().map((m) => (m.engine === 'claude' ? m.value : `${m.value} (${engineLabel(m.engine)}: ${m.label})`)).join(', ')}.` : '',
+    'Orbit tools: ' + [perm.tasks && 'create_task puts work on the board and assigns it', 'list_tasks and get_task check the board', "find_skills searches all of Orbit's skills and read_skill gives you one you don't have (orbit:find-skills)",
       `remember saves a lasting fact to your own notes (about="me")${perm.project_memory ? ' or to the project memory (about="project")' : ''}`,
       canRules && 'read_rules and update_rules change the rules you are allowed to change',
       perm.hire && 'hire adds a new employee to your team when the owner asks for it (they report to you, someone under you, or the owner)',
@@ -608,6 +876,8 @@ export const TOOLS = [
       assignee: { type: 'string', description: 'A teammate\'s name, or "me" for yourself' },
       project: { type: 'string', description: 'Project name. Optional: defaults to the current project' },
       parent_task_id: { type: 'number', description: 'Optional: make it a subtask of this task instead' },
+      model: { type: 'string', description: 'Which model does it: one from "Models you can give work to" in your briefing (Claude: haiku, sonnet, opus, fable; other engines like "gpt:<id>" when switched on). Start with the lightest that can do it well; move up if it falls short (orbit:choose-model). Leave it out (or "auto") to let Orbit pick' },
+      effort: { type: 'string', enum: ['default', ...EFFORTS], description: 'How hard they think: low, medium, high, xhigh, max. "default" = their own setting' },
     } },
     run(a, ctx) {
       const me = employee(ctx.employeeId), here = task(ctx.taskId);
@@ -623,15 +893,41 @@ export const TOOLS = [
       if (!permsOf(me).tasks) throw new Error('You are not allowed to create tasks.');
       if (ctx.created >= LIMITS.perTurn) throw new Error(`You can create at most ${LIMITS.perTurn} tasks per turn. Work with what you have.`);
       if (depth(parent) >= LIMITS.depth) throw new Error(`Tasks can only be nested ${LIMITS.depth} levels deep. Do this part yourself.`);
+      if (who.id !== me.id && handedDown(parent).includes(who.id)) // work only flows down a chain, never back up it
+        throw new Error(`${who.name} is above you in the chain that handed this work to you, so it would go round in circles. Do it yourself, give it to someone else, or say what's blocking you in your reply.`);
+      if (a.model && !['default', 'auto'].includes(a.model) && !modelOk(a.model)) throw new Error(`model must be "auto" or one of: ${availableModels().map((m) => m.value).join(', ')}.`);
+      if (a.effort && a.effort !== 'default' && !EFFORTS.includes(a.effort)) throw new Error(`effort must be one of: default, ${EFFORTS.join(', ')}.`);
       if (one(`SELECT count(*) AS n FROM tasks WHERE kind = 'task' AND created_by NOT IN ('me', 'schedule') AND status != 'done'`).n >= LIMITS.open)
         throw new Error(`The team already has ${LIMITS.open} unfinished tasks it created itself. Wait for some to finish.`);
+      const model = modelOk(a.model) ? a.model : null, effort = EFFORTS.includes(a.effort) ? a.effort : null;
       const id = createTask({ employee_id: who.id, title, description, created_by: me.name, parent_id: parent?.id ?? null,
-        project_id: proj?.id ?? parent.project_id ?? null });
+        project_id: proj?.id ?? parent.project_id ?? null, model, effort });
       ctx.created++;
-      say(here.id, 'note', me.name, `${me.name} created task #${id} for ${who.name}: ${title}`);
+      say(here.id, 'note', me.name, `${me.name} created task #${id} for ${who.name}${model ? ` (${model}${effort ? `, ${effort} effort` : ''})` : ''}: ${title}`);
       return fromChat ? `Created task #${id} "${title}" for ${who.id === me.id ? 'you' : who.name}. It starts as soon as they are free; when it is done, the result comes back to you in this chat.`
         : `Created subtask #${id} "${title}" for ${who.id === me.id ? 'you' : who.name}. It starts as soon as they are free. ` +
         'When you have created all the subtasks you need, stop: their results come back to you here.';
+    },
+  },
+  {
+    name: 'find_skills',
+    description: "Search all of Orbit's skills (not just the ones you have) for ones that could help with the work in front of you. Says which you already have.",
+    inputSchema: { type: 'object', required: ['query'], properties: { query: { type: 'string', description: 'A few words about the work, e.g. "fill in a pdf form" or "landing page copy"' } } },
+    run(a, ctx) {
+      const mine = new Set(skillsOf(employee(ctx.employeeId))), hits = searchSkills(a.query);
+      return hits.length ? hits.map((x) => `- ${x.id}${mine.has(x.id) ? ` (you have it: use the Skill tool, orbit:${x.name})` : ''}: ${x.description.slice(0, 220)}`).join('\n') +
+        "\n\nFor one you don't have, read_skill gives you its instructions for this task." : 'No skills match. Do the work your own way.';
+    },
+  },
+  {
+    name: 'read_skill',
+    description: "Get the instructions of a skill from Orbit's collection that you don't have (find it with find_skills first), to follow for this task.",
+    inputSchema: { type: 'object', required: ['id'], properties: { id: { type: 'string', description: 'Its id from find_skills, e.g. github/pdf' } } },
+    run(a) {
+      const x = findSkills().find((k) => k.id === String(a.id ?? '').trim());
+      if (!x) throw new Error('No such skill. Use find_skills to find one.');
+      const md = readSkillMd(fs.readFileSync(path.join(x.dir, 'SKILL.md'), 'utf8'));
+      return `Skill ${x.name}: ${md.description}\n\n${md.body.slice(0, 30000)}\n\n(Any other files it mentions are in ${x.dir}. If you'll need this skill often, say so in your reply so the owner can give it to you.)`;
     },
   },
   {
@@ -726,7 +1022,7 @@ export const TOOLS = [
       personality: { type: 'string', description: 'How they come across: tone, style' },
       rules: { type: 'string', description: 'Their individual rules (optional)' },
       reports_to: { type: 'string', description: 'Their boss: you (default), someone under you, or "owner" to report straight to the owner (only when the owner asks for that)' },
-      model: { type: 'string', enum: ['default', ...MODELS], description: '"default" follows the owner\'s settings' },
+      model: { type: 'string', description: '"auto" (best): Orbit picks a model for each chat or task. Or one from "Models you can give work to" in your briefing' },
       file_access: { type: 'string', enum: ACCESS_ORDER, description: 'read, edit or full; at most your own access' },
     } },
     run(a, ctx) {
@@ -741,7 +1037,7 @@ export const TOOLS = [
         throw new Error(`You can't give more file access than you have ("${me.access}"). Hire them with "${me.access}"; the owner can raise it in Settings.`);
       // New hires never get to hire or change rules: only the owner grants those.
       saveEmployee({ name: a.name, title: a.title, role: a.job_description, personality: a.personality, rules: a.rules, reports_to: boss?.id ?? null,
-        model: a.model || 'default', effort: 'default', access, perms: { hire: false, global_rules: false, boss_rules: false, team_rules: false } });
+        model: a.model && a.model !== 'default' ? a.model : 'auto', effort: 'default', access, perms: { hire: false, global_rules: false, boss_rules: false, team_rules: false } });
       ctx.hired = (ctx.hired ?? 0) + 1;
       say(here.id, 'note', me.name, `${me.name} hired ${String(a.name).trim()}${a.title ? ', ' + String(a.title).trim() : ''} (reports to ${boss ? boss.name : setting('owner_name') || 'you'}, files: ${access})`);
       return `Hired ${String(a.name).trim()}. They can take tasks right away.${access === 'read' ? ' They can read files but not change them; if they need to build things, tell the owner to raise their file access in Settings.' : ''}`;
@@ -880,7 +1176,7 @@ async function serveTools(req, res) {
 
 // ---------- running Claude ----------
 const running = new Map(); // task id -> child process
-const stopping = new Set();
+const stopping = new Set(), interrupting = new Set(); // stopped by you; stopped so your new message goes in straight away
 const reflecting = new Map(); // task id -> child writing notes after "Mark done"
 
 // Start Claude Code for an employee, on your login, without your personal connectors or hooks.
@@ -903,6 +1199,255 @@ function claude(e, cwd, args, prompt, model, effort) {
   return child;
 }
 
+// ---------- engines: what runs a teammate's turn. Claude Code (Claude), Codex (ChatGPT, and Grok with an xAI key), Antigravity (Gemini). ----------
+// A model is 'haiku', 'sonnet', 'opus' or 'fable' (Claude), 'gpt:<id>', 'gemini:<id>' or 'grok:<id>', or 'auto' (Orbit picks for each chat or task).
+const ENGINES = {
+  gpt: { label: 'ChatGPT', tool: 'Codex CLI', bin: 'codex', install: 'brew install --cask codex', login: 'codex login' },
+  gemini: { label: 'Gemini', tool: 'Antigravity CLI', bin: 'agy', install: 'Install Google Antigravity, then run: agy install', login: 'agy  (sign in with Google)' },
+  grok: { label: 'Grok', tool: 'Codex CLI, with your xAI API key', bin: 'codex', install: 'brew install --cask codex', login: 'Paste your xAI API key' },
+};
+const CLAUDE_MODELS = { haiku: ['Haiku', 'fast and light: quick answers, simple edits, lookups, formatting'], sonnet: ['Sonnet', 'balanced: most writing, research and everyday coding'],
+  opus: ['Opus', 'very capable: hard problems, long tasks, careful reasoning and design'], fable: ['Fable', 'the most capable: the hardest work, when quality matters most'] };
+const ENGINE_ABOUT = { gpt: "OpenAI's GPT, run by Codex: strong at hands-on coding and terminal work, and a second point of view",
+  gemini: "Google's Gemini, run by Antigravity: Flash is quick and light; Pro handles very long documents, images and Google knowledge", grok: "xAI's Grok: what is happening right now, especially on X" };
+export const engineOf = (model) => (String(model ?? '').includes(':') ? String(model).split(':')[0] : 'claude');
+const modelId = (model) => String(model).split(':').slice(1).join(':');
+const engineLabel = (engine) => (engine === 'claude' ? 'Claude' : ENGINES[engine]?.label ?? engine);
+function findBin(name) { // the background service has a short PATH: also look where these tools usually live
+  if (path.isAbsolute(name)) try { fs.accessSync(name, fs.constants.X_OK); return name; } catch { return null; }
+  for (const d of [...String(process.env.PATH ?? '').split(path.delimiter), path.join(os.homedir(), '.local', 'bin'), '/opt/homebrew/bin', '/usr/local/bin'])
+    for (const x of WIN ? ['.exe', '.cmd'] : ['']) {
+      const f = path.join(d, name + x);
+      try { fs.accessSync(f, fs.constants.X_OK); return f; } catch {}
+    }
+  return null;
+}
+// Start one of these tools. On Windows an npm ".cmd" launcher can't be started without a shell (unsafe with a briefing as an argument),
+// so Orbit runs the script it points at with Node instead.
+function startBin(file, args, opts) {
+  if (!/\.cmd$/i.test(file)) return spawn(file, args, opts);
+  const js = fs.readFileSync(file, 'utf8').match(/"%(?:~dp0|dp0%)\\([^"]+?\.[cm]?js)"/i)?.[1];
+  if (!js) throw new Error(`Orbit can't start ${file}.`);
+  return spawn(process.execPath, [path.join(path.dirname(file), js), ...args], opts);
+}
+const connectors = () => { try { return JSON.parse(setting('connectors') || '{}'); } catch { return {}; } }; // { gpt: { on }, gemini: { on }, grok: { on, key } }
+// Orbit's main AI: the engine Orbit's own jobs run on (pictures, hiring, skill matching, Auto), and always switched on.
+// Picked on first start from what's on this computer; you can change it in Settings → Connectors.
+export const MAIN_ENGINES = ['claude', 'gpt', 'gemini'];
+const mainEngine = () => (MAIN_ENGINES.includes(setting('main_engine')) ? setting('main_engine') : 'claude');
+const switchedOn = (engine) => engine === mainEngine() || (engine === 'claude' ? connectors().claude?.on !== false : !!connectors()[engine]?.on); // Claude: on unless you switch it off
+let engineInfo = {}; // engine -> { installed, signedIn, models: [{ id, label }], error }, from checkEngines()
+const ran = (bin, args, ms) => new Promise((ok) => { // { out, code }, whatever happens (code null: it couldn't start or ran out of time)
+  let out = '', child;
+  try { child = startBin(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] }); } catch (err) { return ok({ out: err.message, code: null }); }
+  const timer = setTimeout(() => child.kill(), ms);
+  child.stdout.on('data', (d) => (out += d));
+  child.stderr.on('data', (d) => (out += d));
+  child.on('error', (err) => (out += err.message));
+  child.on('close', (code) => { clearTimeout(timer); ok({ out, code }); });
+});
+const quietly = async (bin, args, ms) => (await ran(bin, args, ms)).out;
+export async function checkEngines() {
+  const out = { claude: { installed: !!findBin(CLAUDE) } }, codex = findBin('codex'), agy = findBin('agy'), key = connectors().grok?.key;
+  if (codex) {
+    let models = []; // the ones Codex itself offers you (it keeps the list up to date)
+    try { models = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.codex', 'models_cache.json'), 'utf8')).models ?? []; } catch {}
+    out.gpt = { installed: true, signedIn: /logged in/i.test(await quietly(codex, ['login', 'status'], 15000)),
+      models: models.filter((x) => x?.visibility === 'list' && /^gpt/.test(x.slug)).map((x) => ({ id: x.slug, label: x.display_name || x.slug, about: x.description })) };
+  } else out.gpt = { installed: false, signedIn: false, models: [] };
+  if (agy) { // newest first; only the newest Flash and Pro
+    const newest = {}, models = (await quietly(agy, ['models'], 45000)).split('\n').map((l) => l.split('\t').map((x) => x.trim()))
+      .filter(([id, label]) => label && /^gemini-[\d.]+-\w+/.test(id)).filter(([id]) => { const [, v, kind] = id.match(/^gemini-([\d.]+)-(\w+)/); return (newest[kind] ??= v) === v; })
+      .map(([id, label]) => ({ id, label }));
+    out.gemini = { installed: true, signedIn: models.length > 0, models };
+  } else out.gemini = { installed: false, signedIn: false, models: [] };
+  out.grok = { installed: !!codex, signedIn: false, models: [] };
+  if (key) {
+    const r = await fetch('https://api.x.ai/v1/models', { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15000) }).catch(() => null);
+    const j = r?.ok ? await r.json().catch(() => null) : null;
+    out.grok = { ...out.grok, signedIn: !!j, models: (j?.data ?? []).map((x) => x.id).filter((id) => /grok/.test(id)).map((id) => ({ id, label: id })), error: r && !r.ok ? `xAI turned the key down (${r.status})` : r ? null : "Couldn't reach xAI" };
+  }
+  return (engineInfo = out);
+}
+// Every model your team can use right now: your main AI's, and those of the engines you switched on in Settings → Connectors.
+export function availableModels() {
+  const list = switchedOn('claude') && engineInfo.claude?.installed !== false ? Object.entries(CLAUDE_MODELS).map(([value, [label, about]]) => ({ value, label, engine: 'claude', about })) : [];
+  for (const engine of ['gpt', 'gemini', 'grok']) if (switchedOn(engine) && engineInfo[engine]?.signedIn)
+    for (const m of engineInfo[engine].models) list.push({ value: `${engine}:${m.id}`, label: m.label, engine, about: `${ENGINE_ABOUT[engine]}${m.about ? `. This one: ${m.about}` : ''}` });
+  return list;
+}
+export const modelOk = (v) => availableModels().some((m) => m.value === v);
+const modelLabel = (v) => (v === 'auto' ? 'Auto' : availableModels().find((m) => m.value === v)?.label ?? (modelId(v) || v));
+const engineProblem = (engine, model) => (engine !== 'claude' && !ENGINES[engine] ? `"${model}" isn't a model Orbit knows.`
+  : !switchedOn(engine) ? `${engineLabel(engine)} is switched off in Settings → Connectors. Switch it on, or pick another model for this.`
+  : engine === 'claude' ? (findBin(CLAUDE) ? null : "Claude Code isn't installed on this computer. Pick a model from your main AI instead, or install Claude Code (claude.com/claude-code).")
+  : !findBin(ENGINES[engine].bin) ? `${ENGINES[engine].tool} isn't installed (${ENGINES[engine].install}).`
+  : engine === 'grok' && !connectors().grok?.key ? 'Grok needs your xAI API key in Settings → Connectors.' : null);
+// Orbit's own jobs run on the main AI: its light model for small ones (skill matching, Auto), a stronger one for the rest (hiring, pictures).
+export function baseModel(kind) {
+  const engine = mainEngine();
+  if (engine === 'claude') return kind === 'light' ? 'haiku' : 'sonnet';
+  const ms = engineInfo[engine]?.models ?? [], find = (re) => ms.find((m) => re.test(`${m.id} ${m.about ?? ''}`));
+  const m = kind === 'light' ? find(/flash-low|fast|light|affordable|efficient|mini/i) : find(/flash-high/i);
+  return `${engine}:${(m ?? ms[0])?.id ?? ''}`; // no id: the engine's own default model
+}
+// On first start: the main AI is whichever is here, Claude first.
+function pickMainEngine() {
+  if (MAIN_ENGINES.includes(setting('main_engine'))) return;
+  const found = MAIN_ENGINES.find((x) => (x === 'claude' ? engineInfo.claude?.installed : engineInfo[x]?.signedIn));
+  if (found) setSetting('main_engine', found);
+}
+
+// Orbit's tools in Antigravity: one "orbit" connection (mcp-bridge.mjs) that only works inside Orbit's own runs, since it needs the run's secret.
+// Antigravity keeps connections and allow-rules in its own settings; your other settings there stay as they are.
+const AGY_SETTINGS = path.join(os.homedir(), '.gemini', 'antigravity-cli', 'settings.json');
+function agyAllow(on) {
+  let j = {};
+  if (fs.existsSync(AGY_SETTINGS)) try { j = JSON.parse(fs.readFileSync(AGY_SETTINGS, 'utf8')); } catch { throw new Error(`Couldn't read ${AGY_SETTINGS}, so Orbit left it alone.`); }
+  const allow = new Set(j.permissions?.allow ?? []), had = allow.has('mcp(orbit/*)');
+  if (had === on) return;
+  on ? allow.add('mcp(orbit/*)') : allow.delete('mcp(orbit/*)');
+  j.permissions = { ...(j.permissions ?? {}), allow: [...allow] };
+  fs.mkdirSync(path.dirname(AGY_SETTINGS), { recursive: true });
+  fs.writeFileSync(AGY_SETTINGS, JSON.stringify(j, null, 2) + '\n');
+}
+async function setupAntigravity(on) {
+  const agy = findBin('agy');
+  if (!agy) return;
+  const r = await ran(agy, on ? ['mcp', 'add', 'orbit', findBin('node') ?? process.execPath, path.join(DIR, 'mcp-bridge.mjs')] : ['mcp', 'remove', 'orbit'], 20000);
+  if (on && r.code !== 0) throw new Error(`Couldn't give Antigravity Orbit's tools: ${r.out.trim()}`);
+  agyAllow(on);
+}
+
+// A conversation belongs to the engine that started it: Claude's ids are saved as they are, the others as "<engine>:<id>".
+export const sessionFor = (t, engine) => {
+  const s = String(t.session_id ?? ''), i = s.indexOf(':');
+  return s && (i < 0 ? 'claude' : s.slice(0, i)) === engine ? s.slice(i + 1) : null;
+};
+// The conversation so far, for a model that wasn't in it (the newest messages are in the prompt itself).
+export function handoff(t) {
+  const said = all("SELECT id, kind, author, text FROM messages WHERE task_id = ? AND kind IN ('me', 'reply') ORDER BY id", t.id);
+  const upTo = said.findLastIndex((m) => m.kind === 'reply');
+  if (upTo < 0) return '';
+  const text = said.slice(0, upTo + 1).map((m) => `${m.kind === 'me' ? 'Owner' : m.author}: ${m.text}`).join('\n\n');
+  return `This conversation started on a different AI model, so you weren't part of it. Here it is so far (you are ${nameOf(t.employee_id)}):\n\n${text.slice(-30000)}\n\n---\n\nThe newest message:\n\n`;
+}
+// A turn on Codex or Antigravity. Their briefing and Orbit's tools come in for this run only.
+function spawnEngine(engine, e, cwd, { model, effort, brief, prompt, secret, dirs, resume }) {
+  const env = { ...process.env, ORBIT_MCP_URL: `http://localhost:${PORT}/mcp`, ORBIT_MCP_TOKEN: secret };
+  for (const k of ['ANTHROPIC_API_KEY', 'CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT']) delete env[k];
+  const id = modelId(model);
+  if (engine === 'gemini') { // no popups: what their access doesn't allow is turned down
+    const access = { read: [], edit: ['--mode', 'accept-edits'], full: ['--dangerously-skip-permissions'] }[e.access] ?? [];
+    const child = startBin(findBin('agy'), ['--output-format', 'stream-json', ...(id ? ['--model', id] : []), ...access, // its models carry their own effort (Low, Medium, High)
+      ...(resume ? ['--conversation', resume] : []), ...dirs.flatMap((d) => ['--add-dir', d])], { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
+    child.stdin.on('error', () => {});
+    child.stdin.end(brief ? `${brief}\n\n---\n\n${prompt}` : prompt); // Antigravity has no separate briefing, so it leads the message
+    return child;
+  }
+  const toml = (s) => JSON.stringify(String(s)); // a TOML string
+  const sandbox = { read: 'read-only', edit: 'workspace-write', full: 'danger-full-access' }[e.access] ?? 'read-only';
+  const args = ['exec', '--json', '--skip-git-repo-check', '-C', cwd, ...(id ? ['-m', id] : []), '--sandbox', sandbox, ...dirs.flatMap((d) => ['--add-dir', d]),
+    '-c', 'approval_policy="never"', ...(brief ? ['-c', `developer_instructions=${toml(brief)}`] : []),
+    ...(secret ? ['-c', `mcp_servers.crew.url=${toml(`http://localhost:${PORT}/mcp`)}`, '-c', 'mcp_servers.crew.bearer_token_env_var="ORBIT_MCP_TOKEN"', '-c', 'mcp_servers.crew.default_tools_approval_mode="approve"'] : []),
+    ...(effort ? ['-c', `model_reasoning_effort=${toml(effort === 'max' ? 'xhigh' : effort)}`] : []),
+    ...(permsOf(e).web && sandbox === 'workspace-write' ? ['-c', 'sandbox_workspace_write.network_access=true'] : [])];
+  if (engine === 'grok') {
+    env.XAI_API_KEY = connectors().grok?.key ?? '';
+    args.push('-c', 'model_provider="xai"', '-c', 'model_providers.xai={ name = "xAI", base_url = "https://api.x.ai/v1", env_key = "XAI_API_KEY", wire_api = "responses" }');
+  }
+  args.push(...(resume ? ['resume', resume] : []), '-'); // the message comes on stdin
+  const child = startBin(findBin('codex'), args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
+  child.stdin.on('error', () => {});
+  child.stdin.end(prompt);
+  return child;
+}
+// Each engine's stream, read into one shape (x): their session, what they did (the log), files they changed, skills they read, and the final reply.
+function readClaude(m, x, cwd) {
+  if (m.type === 'system' && m.subtype === 'init') { x.session(m.session_id); x.model = m.model; }
+  if (m.type === 'assistant') for (const c of m.message.content) {
+    if (c.type === 'text' && c.text.trim()) x.log(c.text.trim() + '\n');
+    if (c.type === 'tool_use') x.log(toolLine(c, cwd));
+    if (c.type === 'tool_use' && EDIT_TOOLS.includes(c.name) && (c.input?.file_path || c.input?.notebook_path)) x.changed(c.input.file_path || c.input.notebook_path);
+    if (c.type === 'tool_use' && c.name === 'Skill' && c.input?.skill) x.skill(c.input.skill); // e.g. "orbit:write-blog-posts"
+    if (c.type === 'tool_use' && c.name === 'mcp__crew__read_skill' && c.input?.id) x.skill(c.input.id); // one from the collection they don't have
+  }
+  if (m.type === 'system' && m.subtype === 'permission_denied') x.log('✋ blocked by access level\n');
+  if (m.type === 'result') x.final = m;
+}
+export function readCodex(m, x) {
+  if (m.type === 'thread.started') x.session(m.thread_id);
+  const it = m.item;
+  if (m.type === 'item.completed' && it) {
+    if (it.type === 'agent_message' && it.text?.trim()) { x.text = it.text; x.log(it.text.trim() + '\n'); }
+    if (it.type === 'command_execution') x.log(`→ Bash ${String(it.command ?? '').replace(/^\/bin\/(z|ba)?sh -lc /, '').split('\n')[0].slice(0, 140)}${it.exit_code ? ` (exit ${it.exit_code})` : ''}\n`);
+    if (it.type === 'file_change') for (const c of it.changes ?? []) { x.changed(c.path); x.log(`→ Edit ${c.path}\n`); }
+    if (it.type === 'mcp_tool_call') {
+      x.log(`→ ${it.tool} ${JSON.stringify(it.arguments ?? {}).slice(0, 120)}${it.error ? ` (failed: ${it.error.message ?? ''})` : ''}\n`);
+      if (it.tool === 'read_skill' && it.arguments?.id && !it.error) x.skill(it.arguments.id);
+    }
+    if (it.type === 'web_search') x.log(`→ WebSearch ${it.query ?? ''}\n`);
+  }
+  if (m.type === 'turn.completed') x.final = { result: x.text ?? '', is_error: false, total_cost_usd: 0 }; // your ChatGPT plan, not per use
+  if (m.type === 'turn.failed' || m.type === 'error') x.final = { result: m.error?.message ?? m.message ?? 'Codex stopped with an error', is_error: true };
+}
+export function readAntigravity(m, x) {
+  if (m.event === 'init') x.session(m.conversation_id);
+  const s = m.step_update;
+  if (s?.step_type === 'tool' && s.state !== 'ACTIVE') {
+    const p = s.tool_info?.parameters ?? {}, what = p.CommandLine ?? p.TargetFile ?? p.AbsolutePath ?? p.Query ?? p.Url ?? (p.ToolName ? `${p.ServerName}/${p.ToolName}` : '');
+    x.log(`→ ${s.tool_name} ${String(what).split('\n')[0].slice(0, 140)}${s.state === 'ERROR' ? ' (blocked or failed)' : ''}\n`);
+    if (s.state === 'ERROR' && /permission check failed/.test(s.tool_info?.error?.message ?? '')) (x.blocked ??= []).push(`${s.tool_name} ${String(what).split('\n')[0].slice(0, 100)}`);
+    if (s.state === 'DONE' && p.TargetFile) x.changed(p.TargetFile);
+    if (s.state === 'DONE' && p.ToolName === 'read_skill' && p.Arguments?.id) x.skill(p.Arguments.id);
+  }
+  if (m.event === 'result') {
+    const r = m.result ?? {}, denied = (r.denied_actions ?? []).map((d) => d.display_name ?? d.action);
+    if (denied.length) x.log(`✋ blocked by access level: ${denied.join(', ')}\n`);
+    x.final = { result: r.response?.trim() || (denied.length ? `I had to stop: my file access doesn't allow ${denied.join(', ')}, and on Gemini I can't ask you for permission mid-task. ` +
+      'If I should be able to, give me Full access in my profile, or switch this chat to a Claude model (those can ask you first).' : ''),
+      blocked: !r.response?.trim() && denied.length ? (x.blocked ?? denied).join(', ') : null, // it stopped there: Orbit tells it and lets it carry on
+      is_error: r.status !== 'SUCCESS', total_cost_usd: 0 }; // your Google plan, not per use
+  }
+}
+
+// Auto: on the first turn of a chat or task, a quick Haiku check picks the model (and effort) from what the work needs. You can change it any time.
+const picking = new Set();
+function pickModel(t, e) {
+  if (picking.has(t.id)) return;
+  picking.add(t.id);
+  setTask(t.id, { status: 'working' }); // nothing else starts it meanwhile
+  autoModel(t, e).catch(() => null).then((pick) => {
+    picking.delete(t.id);
+    if (task(t.id)?.status !== 'working') return pump(); // you stopped it meanwhile
+    const model = pick?.model ?? fallbackModel(), engine = engineOf(model), label = modelLabel(model);
+    const effort = engine !== 'gemini' && !t.effort && !EFFORTS.includes(e.effort) && pick?.effort ? pick.effort : null; // Gemini's models carry their own effort
+    setTask(t.id, { model, ...(effort ? { effort } : {}), status: 'queued' });
+    say(t.id, 'note', e.name, `Auto picked ${label}${engine === 'claude' || label.toLowerCase().includes(engineLabel(engine).toLowerCase()) ? '' : ` (${engineLabel(engine)})`}` +
+      `${effort ? `, ${effort} effort` : ''}${pick?.why ? `: ${pick.why}` : ''}`);
+    pump();
+  });
+}
+const fallbackModel = () => (modelOk(setting('default_model')) ? setting('default_model') : baseModel('standard'));
+async function autoModel(t, e) {
+  const models = availableModels(), work = `${t.title}\n${t.next_prompt || t.body || ''}`.slice(0, 3000);
+  const prompt = [
+    'Pick the model that should do this piece of work. Prefer the lightest model that will clearly do it well; save the strongest for work that needs it.',
+    `Who does it: ${e.name}, ${e.title || 'a team member'}. ${String(e.role).replace(/\s+/g, ' ').slice(0, 300)}`,
+    `The work:\n${work}`,
+    `Models (id: what it is good at):\n${models.map((m) => `- ${m.value}: ${m.label}, ${m.about}`).join('\n')}`,
+    'Reply with only JSON, no other text: {"model": "<one id from the list>", "effort": "low|medium|high|xhigh", "why": "a few words, for the owner"}',
+  ].join('\n\n');
+  const r = await askAI({}, DATA, prompt, baseModel('light'), 90 * 1000);
+  return readPick(r?.result, models);
+}
+export function readPick(text, models) {
+  let j = null;
+  try { j = JSON.parse(String(text ?? '').match(/\{[\s\S]*\}/)?.[0]); } catch {}
+  if (!models.some((m) => m.value === j?.model)) return null;
+  return { model: j.model, effort: EFFORTS.includes(j.effort) ? j.effort : null, why: String(j.why ?? '').replace(/\s+/g, ' ').trim().slice(0, 160) };
+}
+
 function pump() {
   for (const e of all('SELECT * FROM employees')) {
     if (one(`SELECT 1 FROM tasks WHERE employee_id = ? AND status = 'working'`, e.id)) continue;
@@ -913,7 +1458,7 @@ function pump() {
 
 function toolLine(c, cwd) {
   const i = c.input || {};
-  const what = i.command || i.file_path || i.pattern || i.url || i.query || i.title || i.note || i.description || '';
+  const what = i.command || i.file_path || i.pattern || i.url || i.query || i.title || i.note || i.description || i.skill || i.id || '';
   return `→ ${c.name.replace(/^mcp__crew__/, '')} ${String(what).replace(cwd + '/', '').split('\n')[0].slice(0, 140)}\n`;
 }
 
@@ -921,7 +1466,16 @@ function run(t, e) {
   const p = t.project_id && project(t.project_id);
   if (!t.folder && p?.folder && !fs.existsSync(expand(p.folder))) { // moved or deleted since: stop instead of making an empty one
     say(t.id, 'note', e.name, `Couldn't start: the ${p.name} project folder is missing (${p.folder}). Fix it in the project's settings, then send a message to try again.`);
-    return setTask(t.id, { status: 'failed' });
+    setTask(t.id, { status: 'failed', result: `It failed: the ${p.name} project folder is missing (${p.folder}).` });
+    return ownerReads(t) || deliverToParent(task(t.id)); // whoever handed it out hears
+  }
+  const model = modelFor(t, e), engine = engineOf(model);
+  if (model === 'auto') return pickModel(t, e); // the first turn: Orbit picks the model, then this runs again
+  const problem = engineProblem(engine, model);
+  if (problem) {
+    say(t.id, 'note', e.name, `Couldn't start: ${problem}`);
+    setTask(t.id, { status: 'failed', result: `It failed: ${problem}` });
+    return ownerReads(t) || deliverToParent(task(t.id));
   }
   const cwd = expand(t.folder || p?.folder || e.folder);
   fs.mkdirSync(cwd, { recursive: true });
@@ -934,30 +1488,32 @@ function run(t, e) {
   // Their briefing goes in a file: it can be long, and Windows caps a command line at about 32,000 characters.
   const brief = path.join(DATA, 'briefs', `${t.id}-${crypto.randomBytes(4).toString('hex')}.md`);
   fs.mkdirSync(path.dirname(brief), { recursive: true });
-  fs.writeFileSync(brief, systemPrompt(e, t, cwd));
-  const args = ['--append-system-prompt-file', brief, '--mcp-config', tools, ...ACCESS[e.access], ...(permsOf(e).chrome ? ['--chrome'] : []),
-    '--allowedTools', ...READ_TOOLS, ...rules, ...(dirs.length ? ['--add-dir', ...dirs] : []),
-    '--permission-prompts', 'host', '--permission-prompt-tool', 'mcp__crew__permission_prompt']; // anything else asks you
-  if (t.session_id) args.push('--resume', t.session_id);
+  fs.writeFileSync(brief, systemPrompt(e, t, cwd, engine));
   setTask(t.id, { status: 'working', next_prompt: null, log: '' }); // log = what they do during this turn
-  const child = claude(e, cwd, args, t.next_prompt, modelFor(t, e), effortFor(t, e));
+  // Switched to a model on another engine: it can't open the old conversation, so it gets what was said so far.
+  const resume = sessionFor(t, engine), prompt = t.session_id && !resume ? handoff(t) + t.next_prompt : t.next_prompt;
+  let child;
+  if (engine === 'claude') {
+    const args = ['--append-system-prompt-file', brief, '--mcp-config', tools, ...ACCESS[e.access], ...(permsOf(e).chrome ? ['--chrome'] : []),
+      '--allowedTools', ...READ_TOOLS, ...rules, ...(dirs.length ? ['--add-dir', ...dirs] : []),
+      '--permission-prompts', 'host', '--permission-prompt-tool', 'mcp__crew__permission_prompt']; // anything else asks you
+    if (resume) args.push('--resume', resume);
+    child = claude(e, cwd, args, prompt, model, effortFor(t, e));
+  } else child = spawnEngine(engine, e, cwd, { model, effort: effortFor(t, e), brief: fs.readFileSync(brief, 'utf8'), prompt, secret, dirs, resume });
   child.on('close', () => fs.rmSync(brief, { force: true }));
+  child.startedAt = Date.now(); // for the Live page: how long this turn has run
   running.set(t.id, child);
 
-  let final = null, stderr = '', ended = false, usedModel = null;
-  const changed = new Set(); // files this turn created or changed
+  let stderr = '', ended = false;
+  const changed = new Set(), skillsUsed = new Set(); // files this turn created or changed; skills it opened
+  const x = { final: null, text: null, model: engine === 'claude' ? null : modelId(model), session: (id) => setTask(t.id, { session_id: engine === 'claude' ? id : `${engine}:${id}` }), log: (line) => appendLog(t.id, line),
+    changed: (f) => changed.add(path.resolve(cwd, String(f))), skill: (id) => skillsUsed.add(String(id).replace(/^orbit:/, '').split('/').pop()) };
+  const read = { claude: readClaude, gemini: readAntigravity }[engine] ?? readCodex;
   child.stderr.on('data', (d) => (stderr = (stderr + d).slice(-2000)));
   readline.createInterface({ input: child.stdout }).on('line', (line) => {
     let m;
     try { m = JSON.parse(line); } catch { return; }
-    if (m.type === 'system' && m.subtype === 'init') { setTask(t.id, { session_id: m.session_id }); usedModel = m.model; }
-    if (m.type === 'assistant') for (const c of m.message.content) {
-      if (c.type === 'text' && c.text.trim()) appendLog(t.id, c.text.trim() + '\n');
-      if (c.type === 'tool_use') appendLog(t.id, toolLine(c, cwd));
-      if (c.type === 'tool_use' && EDIT_TOOLS.includes(c.name) && (c.input?.file_path || c.input?.notebook_path)) changed.add(path.resolve(cwd, c.input.file_path || c.input.notebook_path));
-    }
-    if (m.type === 'system' && m.subtype === 'permission_denied') appendLog(t.id, '✋ blocked by access level\n');
-    if (m.type === 'result') final = m;
+    read(m, x, cwd);
   });
   const end = () => {
     if (ended) return;
@@ -965,22 +1521,36 @@ function run(t, e) {
     running.delete(t.id);
     runs.delete(secret);
     for (const ap of [...approvals.values()].filter((x) => x.taskId === t.id)) { approvals.delete(ap.id); ap.resolve({ allow: false, message: 'The work stopped.' }); }
+    const final = x.final;
     if (final) exec('UPDATE tasks SET cost = cost + ? WHERE id = ?', final.total_cost_usd || 0, t.id);
+    if (!final?.blocked) blockedOnce.delete(t.id);
     const now = task(t.id), questions = asking.get(t.id);
     asking.delete(t.id);
-    if (stopping.delete(t.id)) {
+    if (interrupting.delete(t.id)) { // your message is already in next_prompt: they carry on with it in the same session
+      stopping.delete(t.id);
+      say(t.id, 'note', e.name, 'Interrupted by you', now.log.trim());
+      setTask(t.id, { status: 'queued' });
+    } else if (stopping.delete(t.id)) {
       say(t.id, 'note', e.name, 'Stopped by you', now.log.trim());
       setTask(t.id, { status: 'stopped' });
+    } else if (final?.blocked && !blockedOnce.has(t.id)) { // Antigravity ends the turn at a blocked step: say so, and they carry on without it (once)
+      blockedOnce.add(t.id);
+      say(t.id, 'note', e.name, `Blocked by their file access: ${final.blocked}. ${e.name} carries on without it.`, now.log.trim());
+      setTask(t.id, { status: 'queued', next_prompt: `Orbit: that step was blocked (${final.blocked}): your file access doesn't allow it, and nobody can approve it now. ` +
+        `Don't try it again or work around it. Carry on with what was asked using what you can do (list_dir, find_by_name, grep_search and view_file list, find, search and read files), then answer.${now.next_prompt ? `\n\n${now.next_prompt}` : ''}` });
     } else if (!final || final.is_error) {
-      say(t.id, 'note', e.name, `Failed: ${final?.result || stderr.trim() || 'Claude exited without a result'}`, now.log.trim());
-      setTask(t.id, { status: 'failed' });
-    } else finish(now, e, final.result || '', { model: usedModel || Object.keys(final.modelUsage || {})[0] || null, effort: effortFor(t, e) || 'standard', files: [...changed], questions });
+      const why = final?.result || stderr.trim() || `${engineLabel(engine)} exited without a result`;
+      say(t.id, 'note', e.name, `Failed: ${why}`, now.log.trim());
+      setTask(t.id, { status: 'failed', result: `It failed: ${why.slice(0, 500)}` });
+      if (!ownerReads(now)) deliverToParent(task(t.id)); // a teammate's subtask: whoever handed it out hears, and can move it up a model
+    } else finish(now, e, final.result || '', { model: x.model || Object.keys(final.modelUsage || {})[0] || null, effort: effortFor(t, e) || 'standard', files: [...changed], questions, skills: [...skillsUsed] });
     pump();
   };
   child.on('close', end);
   child.on('error', (err) => { stderr += err.message; end(); }); // e.g. `claude` not installed
 }
 
+const blockedOnce = new Set(); // turns already told once that a step was blocked: a second block ends the turn
 // Replies the owner reads: chats, and tasks the owner (or a schedule) gave out. Subtasks go back to the teammate who asked.
 const ownerReads = (t) => t.kind === 'chat' || !t.parent_id || ['me', 'schedule'].includes(t.created_by);
 function finish(t, e, text, stamp) {
@@ -998,11 +1568,11 @@ function finish(t, e, text, stamp) {
 }
 
 // ---------- tasks and chats ----------
-function createTask({ kind = 'task', employee_id = 0, title, description = '', project_id = null, parent_id = null, folder = null, schedule_id = null, created_by = 'me', attachments = [] }) {
+function createTask({ kind = 'task', employee_id = 0, title, description = '', project_id = null, parent_id = null, folder = null, schedule_id = null, created_by = 'me', attachments = [], model = null, effort = null }) {
   const prompt = kind === 'chat' ? description + filesNote(attachments) : [title, description].filter(Boolean).join('\n\n');
-  const id = exec(`INSERT INTO tasks (kind, title, body, employee_id, project_id, parent_id, folder, schedule_id, created_by, status, next_prompt)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, kind, title, description, employee_id || 0, project_id || null, parent_id || null,
-    String(folder || '').trim() || null, schedule_id, created_by, employee_id ? 'queued' : 'todo', employee_id ? prompt : null).lastInsertRowid;
+  const id = exec(`INSERT INTO tasks (kind, title, body, employee_id, project_id, parent_id, folder, schedule_id, created_by, status, next_prompt, model, effort)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, kind, title, description, employee_id || 0, project_id || null, parent_id || null,
+    String(folder || '').trim() || null, schedule_id, created_by, employee_id ? 'queued' : 'todo', employee_id ? prompt : null, model, effort).lastInsertRowid;
   if (kind === 'chat') say(id, 'me', 'me', description, '', { attachments });
   return id;
 }
@@ -1027,17 +1597,21 @@ function sendMessage(t, text, files = []) {
 }
 
 // When every open subtask of a task is done, its assignee gets the results and continues.
+// Who handed this work down: the assignee of `t` and of every task above it.
+const handedDown = (t) => { const ids = []; for (let x = t, i = 0; x && i < 20; x = x.parent_id && task(x.parent_id), i++) ids.push(x.employee_id); return ids; };
 function deliverToParent(t) {
   const p = t.parent_id && task(t.parent_id);
   if (!p) return;
   const kids = all('SELECT * FROM tasks WHERE parent_id = ? AND reported = 0', p.id);
-  if (kids.some((k) => k.status !== 'done')) return; // still waiting on another one
+  if (kids.some((k) => !['done', 'failed'].includes(k.status))) return; // still waiting on another one (a failed one counts as back)
   exec('UPDATE tasks SET reported = 1 WHERE parent_id = ? AND reported = 0', p.id);
   for (const k of kids) say(p.id, 'teammate', k.employee_id ? nameOf(k.employee_id) : 'Subtask', `Finished #${k.id} "${k.title}":\n${k.result || '(no result)'}`, '',
     { ...(one(`SELECT model, effort FROM messages WHERE task_id = ? AND kind = 'reply' ORDER BY id DESC LIMIT 1`, k.id) ?? {}),
-      files: [...new Set(all(`SELECT activity, files FROM messages WHERE task_id = ? AND kind IN ('reply', 'teammate')`, k.id).flatMap((m) => messageFiles(m, cwdOf(k)).map((f) => f.path)))] });
+      files: [...new Set(all(`SELECT activity, files FROM messages WHERE task_id = ? AND kind IN ('reply', 'teammate')`, k.id).flatMap((m) => messageFiles(m, cwdOf(k)).map((f) => f.path)))],
+      skills: [...new Set(all(`SELECT skills FROM messages WHERE task_id = ? AND kind IN ('reply', 'teammate') AND skills IS NOT NULL`, k.id).flatMap((m) => JSON.parse(m.skills)))] });
   if (p.status === 'done' || !p.employee_id) return; // closed, or nobody assigned to continue
-  const results = kids.map((k) => `${p.kind === 'chat' ? 'Task' : 'Subtask'} #${k.id} "${k.title}" is done (${k.employee_id ? nameOf(k.employee_id) : 'unassigned'}):\n${k.result || '(no result)'}`).join('\n\n');
+  const results = kids.map((k) => `${p.kind === 'chat' ? 'Task' : 'Subtask'} #${k.id} "${k.title}" ${k.status === 'failed' ? 'FAILED' : 'is done'} (${k.employee_id ? nameOf(k.employee_id) : 'unassigned'}${k.model ? `, ${k.model}` : ''}):\n${k.result || '(no result)'}`).join('\n\n')
+    + (kids.some((k) => k.status === 'failed') ? '\n\nFor what failed, follow orbit:check-results: move it up a model, give it to someone else, or report the blocker.' : '');
   queueMessage(p, p.kind === 'chat' ? `Work you handed out from this chat is done.\n\n${results}\n\nCheck the results, then tell the owner what was done and anything that needs them.`
     : `${results}\n\nContinue your task.`);
   if (p.status === 'waiting') setTask(p.id, { status: 'queued' });
@@ -1069,13 +1643,15 @@ function reflect(t) {
   if (!e || !t.session_id || t.kind !== 'task' || reflecting.has(t.id)) return;
   const p = permsOf(e).project_memory && t.project_id && project(t.project_id); // no project notes without permission
   const prompt = NOTES_PROMPT(readFile(notesFile(e.name)), p, p ? readFile(memoryFile(p.name)) : '');
-  const child = claude(e, expand(t.folder || p?.folder || e.folder), ['--resume', t.session_id, '--permission-mode', 'dontAsk'], prompt, modelFor(t, e), 'low'); // a short summary needs little thinking
+  const cwd = expand(t.folder || p?.folder || e.folder), model = modelFor(t, e), engine = engineOf(model), resume = sessionFor(t, engine);
+  if (!resume || engineProblem(engine, model)) return; // its model was switched since, or its engine is off
+  const child = engine === 'claude' ? claude(e, cwd, ['--resume', resume, '--permission-mode', 'dontAsk'], prompt, model, 'low') // a short summary needs little thinking
+    : spawnEngine(engine, { ...e, access: 'read' }, cwd, { model, effort: 'low', brief: '', prompt, secret: '', dirs: [], resume });
   reflecting.set(t.id, child);
-  let final = null;
-  readline.createInterface({ input: child.stdout }).on('line', (line) => {
-    try { const m = JSON.parse(line); if (m.type === 'result') final = m; } catch {}
-  });
+  const x = { final: null, text: null, session() {}, log() {}, changed() {}, skill() {} }, read = { claude: readClaude, gemini: readAntigravity }[engine] ?? readCodex;
+  readline.createInterface({ input: child.stdout }).on('line', (line) => { try { read(JSON.parse(line), x, cwd); } catch {} });
   const end = () => {
+    const final = x.final;
     if (!reflecting.delete(t.id)) return;
     if (final) exec('UPDATE tasks SET cost = cost + ? WHERE id = ?', final.total_cost_usd || 0, t.id);
     const { mine, project: shared } = final && !final.is_error ? splitNotes(final.result || '') : { mine: [], project: [] };
@@ -1207,7 +1783,26 @@ function removeMyPicture() {
   fs.mkdirSync(AVATAR_DIR, { recursive: true });
   for (const f of fs.readdirSync(AVATAR_DIR)) if (/^me\.(svg|png|jpg|webp)$/.test(f)) fs.rmSync(path.join(AVATAR_DIR, f));
 }
-function drawAvatar(e, style, details, model) {
+// One answer with no tools (pictures, skill matching, hiring, Auto), on any engine; usually Orbit's main AI (baseModel).
+// Claude's cost counts as use outside tasks (picture_cost); the others come out of your plan with them.
+function askAI(e, cwd, prompt, model, ms) {
+  const engine = engineOf(model), problem = engineProblem(engine, model);
+  if (problem) return Promise.resolve({ result: problem, is_error: true });
+  const child = engine === 'claude' ? claude(e, cwd, ['--tools', ''], prompt, model, '')
+    : spawnEngine(engine, { ...e, access: 'read' }, cwd, { model, effort: 'low', brief: '', prompt, secret: '', dirs: [] });
+  const x = { final: null, text: null, session() {}, log() {}, changed() {}, skill() {} }, read = { claude: readClaude, gemini: readAntigravity }[engine] ?? readCodex;
+  readline.createInterface({ input: child.stdout }).on('line', (line) => { try { read(JSON.parse(line), x, cwd); } catch {} });
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => child.kill(), ms);
+    child.on('error', () => reject(new Error(`Could not start ${ENGINES[engine]?.tool ?? 'Claude Code'}.`)));
+    child.on('close', () => {
+      clearTimeout(timer);
+      if (x.final?.total_cost_usd) setSetting('picture_cost', String(Number(setting('picture_cost')) + x.final.total_cost_usd));
+      resolve(x.final);
+    });
+  });
+}
+async function drawAvatar(e, style, details, model) {
   const prompt = [
     'Draw a square profile picture for a member of my team, as one SVG.', '',
     `Who: ${e.name}, ${e.title || 'a team member'}.`,
@@ -1224,33 +1819,36 @@ function drawAvatar(e, style, details, model) {
     'Reply with only the SVG code: start with <svg and end with </svg>, nothing else.',
   ].filter((x) => x !== null).join('\n');
   fs.mkdirSync(AVATAR_DIR, { recursive: true });
-  const child = claude(e, AVATAR_DIR, ['--tools', ''], prompt, MODELS.includes(model) ? model : setting('default_model'), '');
-  return new Promise((resolve, reject) => {
-    let out = '';
-    const timer = setTimeout(() => child.kill(), 4 * 60 * 1000);
-    child.stdout.on('data', (d) => (out += d));
-    child.on('error', () => reject(new Error('Could not start Claude Code.')));
-    child.on('close', () => {
-      clearTimeout(timer);
-      const result = out.split('\n').map((l) => { try { return JSON.parse(l); } catch { return null; } }).find((x) => x?.type === 'result');
-      if (result?.total_cost_usd) setSetting('picture_cost', String(Number(setting('picture_cost')) + result.total_cost_usd));
-      const svg = !result?.is_error && cleanSvg(result?.result);
-      svg ? resolve(svg) : reject(new Error(result?.is_error ? `Claude couldn't draw it: ${result.result || 'unknown error'}` : "That one didn't come out as a clean picture. Try again."));
-    });
-  });
+  const result = await askAI(e, AVATAR_DIR, prompt, modelOk(model) ? model : baseModel('standard'), 4 * 60 * 1000);
+  const svg = !result?.is_error && cleanSvg(result?.result);
+  if (!svg) throw new Error(result?.is_error ? `Couldn't draw it: ${result.result || 'unknown error'}` : "That one didn't come out as a clean picture. Try again.");
+  return svg;
+}
+const rememberPictureStyle = (b) => { setSetting('picture_style', b.style); if (modelOk(b.model)) setSetting('picture_model', b.model); };
+// A picture drawn from someone's details, in the style you used last, put straight on their profile. You can redraw it there.
+async function autoPicture(id) {
+  const e = employee(id);
+  if (!e || e.avatar || drawing.has(id)) return;
+  drawing.add(id);
+  try {
+    const svg = await drawAvatar(e, STYLES[setting('picture_style')] ? setting('picture_style') : 'pixel', '', setting('picture_model'));
+    if (!employee(id) || employee(id).avatar) return; // let go, or you gave them one meanwhile
+    fs.writeFileSync(path.join(AVATAR_DIR, `${id}.svg`), svg);
+    exec('UPDATE employees SET avatar = ? WHERE id = ?', String(Date.now()), id);
+  } finally { drawing.delete(id); }
 }
 const bgFile = () => { try { return fs.readdirSync(BG_DIR).find((f) => /^background\.(jpg|png|webp)$/.test(f)); } catch { return null; } };
 
 // ---------- people and projects ----------
-function saveEmployee(b, id) {
+function saveEmployee(b, id, { picture = true } = {}) { // picture: draw one for a new hire (not when they bring their own)
   const str = (k, max) => String(b[k] ?? '').trim().slice(0, max);
   const e = { name: str('name', 30), title: str('title', 60), role: str('role', 5000), personality: str('personality', 3000), rules: str('rules', 5000),
-    reports_to: Number(b.reports_to) || null, model: b.model || 'default', effort: b.effort || 'default', access: b.access,
+    reports_to: Number(b.reports_to) || null, model: !b.model || b.model === 'default' ? 'auto' : b.model, effort: b.effort || 'default', access: b.access,
     perms: JSON.stringify(Object.fromEntries(Object.entries(PERMS).map(([k, v]) => [k, typeof b.perms?.[k] === 'boolean' ? b.perms[k] : v.on]))),
     skills: Array.isArray(b.skills) ? JSON.stringify([...new Set(b.skills.map(String))].filter((x) => findSkills().some((k) => k.id === x))) : id ? employee(id).skills : '[]' };
   if (!/^[\w-]{1,30}$/.test(e.name)) throw new Error('Name must be one word: letters, numbers, - or _.');
   if (!e.role) throw new Error('Write their job description.');
-  if (!['default', ...MODELS].includes(e.model)) throw new Error('Pick a model.');
+  if (e.model !== 'auto' && !modelOk(e.model)) throw new Error('Pick a model.');
   if (!['default', ...EFFORTS].includes(e.effort)) throw new Error('Pick an effort level.');
   if (!ACCESS[e.access]) throw new Error('Pick their file access.');
   const boss = e.reports_to && employee(e.reports_to);
@@ -1259,7 +1857,14 @@ function saveEmployee(b, id) {
   e.folder = str('folder', 500) || path.join(DATA, 'workspace', e.name.toLowerCase());
   const cols = Object.keys(e);
   try {
-    if (!id) return { id: exec(`INSERT INTO employees (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`, ...Object.values(e)).lastInsertRowid };
+    if (!id) {
+      const newId = Number(exec(`INSERT INTO employees (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`, ...Object.values(e)).lastInsertRowid);
+      if (!one('SELECT 1 FROM employees WHERE archived_at IS NULL AND id != ?', newId)) setSetting('main_assistant', String(newId)); // the first teammate: your main assistant
+      fs.rmSync(notesFile(e.name), { force: true }); // a new person starts with a clean memory, never the notes of someone let go with the same name
+      if (e.skills === '[]') autoSkills([employee(newId)]).catch(() => {}); // a new hire gets the skills that fit their job, in the background
+      if (picture) autoPicture(newId).catch(() => {}); // and a profile picture
+      return { id: newId };
+    }
     const before = employee(id);
     exec(`UPDATE employees SET ${cols.map((c) => `${c} = ?`).join(', ')} WHERE id = ?`, ...Object.values(e), id);
     const [from, to] = [notesFile(before.name), notesFile(e.name)];
@@ -1295,22 +1900,24 @@ async function saveProject(b, id) {
 const OPEN = "('queued','working','waiting')";
 const routes = {
   'GET /api/state': () => ({
-    settings: { default_model: setting('default_model'), default_effort: setting('default_effort'), owner_name: setting('owner_name'), owner_avatar: setting('owner_avatar'),
+    settings: { main_engine: mainEngine(), default_model: setting('default_model'), default_effort: setting('default_effort'), owner_name: setting('owner_name'), owner_avatar: setting('owner_avatar'),
       main_assistant: Number(setting('main_assistant')) || null, picture_cost: Number(setting('picture_cost')) || 0, appearance: cleanAppearance(JSON.parse(setting('appearance') || '{}')) },
     perms: PERMS,
     styles: Object.fromEntries(Object.entries(STYLES).map(([k, [label, blurb]]) => [k, { label, blurb }])),
-    employees: all('SELECT * FROM employees ORDER BY name').map((e) => ({ ...e, perms: permsOf(e), allow: allowOf(e), skills: skillsOf(e) })),
+    models: availableModels(), // Claude's, plus the engines you switched on
+    employees: all('SELECT * FROM employees ORDER BY name').map((e) => ({ ...e, perms: permsOf(e), allow: allowOf(e), skills: skillsOf(e), drawing: drawing.has(e.id) })),
     approvals: [...approvals.values()].map(({ resolve, ...ap }) => ap),
     projects: all('SELECT * FROM projects ORDER BY name'),
     schedules: all('SELECT * FROM schedules ORDER BY paused, next_run'),
     tasks: all(`SELECT id, kind, title, employee_id, project_id, parent_id, created_by, schedule_id, model, effort, status, cost, created_at, updated_at, archived_at,
       (SELECT substr(text, 1, 160) FROM messages m WHERE m.task_id = tasks.id AND m.kind NOT IN ('note', 'memory') ORDER BY m.id DESC LIMIT 1) AS last,
-      (SELECT m.questions IS NOT NULL FROM messages m WHERE m.task_id = tasks.id AND m.kind NOT IN ('note', 'memory') ORDER BY m.id DESC LIMIT 1) AS asking
-      FROM tasks ORDER BY updated_at DESC LIMIT 500`),
+      (SELECT m.questions IS NOT NULL FROM messages m WHERE m.task_id = tasks.id AND m.kind NOT IN ('note', 'memory') ORDER BY m.id DESC LIMIT 1) AS asking,
+      CASE WHEN status = 'working' THEN substr(log, -400) END AS tail
+      FROM tasks ORDER BY updated_at DESC LIMIT 500`).map((t) => (running.has(t.id) ? { ...t, since: running.get(t.id).startedAt } : t)), // tail, since: for the Live page
   }),
   'GET /api/tasks/:id': (t) => ({
     ...t,
-    messages: all('SELECT * FROM messages WHERE task_id = ? ORDER BY id', t.id).map((m) => ({ ...m, deliverables: deliverablesOf(m, t), questions: m.questions ? JSON.parse(m.questions) : null, attachments: attachmentsOf(m) })),
+    messages: all('SELECT * FROM messages WHERE task_id = ? ORDER BY id', t.id).map((m) => ({ ...m, deliverables: deliverablesOf(m, t), questions: m.questions ? JSON.parse(m.questions) : null, attachments: attachmentsOf(m), skills: m.skills ? JSON.parse(m.skills) : [] })),
     children: all('SELECT id, title, status, employee_id FROM tasks WHERE parent_id = ? ORDER BY id', t.id),
     parent: t.parent_id ? one('SELECT id, title, status FROM tasks WHERE id = ?', t.parent_id) : null,
   }),
@@ -1321,7 +1928,7 @@ const routes = {
     const files = cleanAttachments(b.attachments, expand(String(b.folder || '').trim() || project(b.project_id)?.folder || employee(b.employee_id).folder));
     const message = String(b.message || '').trim() || (files.length ? 'Please look at the files I attached.' : '');
     if (!message) throw new Error('Write your first message.');
-    if (b.model && !MODELS.includes(b.model)) throw new Error('Pick a model.');
+    if (b.model && !modelOk(b.model)) throw new Error('Pick a model.');
     if (b.effort && !EFFORTS.includes(b.effort)) throw new Error('Pick an effort level.');
     const id = createTask({ kind: 'chat', employee_id: Number(b.employee_id), title: String(b.title || '').trim() || shortTitle(message),
       description: message, project_id: Number(b.project_id) || null, folder: b.folder, attachments: files });
@@ -1351,7 +1958,7 @@ const routes = {
     notArchived(employee_id !== t.employee_id && employee(employee_id), project_id !== t.project_id && project(project_id));
     notArchived(null, project(t.project_id)); // an archived project's tasks stay as they were
     if (employee_id !== t.employee_id && t.status === 'working') throw new Error('Stop it before giving it to someone else.');
-    if (b.model && !MODELS.includes(b.model)) throw new Error('Pick a model.');
+    if (b.model && !modelOk(b.model)) throw new Error('Pick a model.');
     if (b.effort && !EFFORTS.includes(b.effort)) throw new Error('Pick an effort level.');
     setTask(t.id, { title, body: description, project_id, // the next turn uses a new model or effort
       model: b.model === undefined ? t.model : b.model || null, effort: b.effort === undefined ? t.effort : b.effort || null });
@@ -1369,6 +1976,7 @@ const routes = {
     notArchived(employee(t.employee_id), project(t.project_id));
     if (t.archived_at) archive('chat', t.id, false); // writing in an archived chat brings it back
     sendMessage(t, text || 'Please look at the files I attached.', files);
+    if (b.interrupt && running.has(t.id)) { interrupting.add(t.id); running.get(t.id).kill('SIGTERM'); } // stop this turn; the message goes in now
   },
   // Upload a file to attach. It's kept in your Orbit data (uploads/), never in a project folder.
   'POST /api/uploads': (_, b) => {
@@ -1399,9 +2007,9 @@ const routes = {
     if (!['queued', 'working'].includes(t.status)) throw new Error('It is not running.');
     stop(t);
   },
-  'GET /api/settings': () => ({ ...Object.fromEntries(Object.keys(SETTINGS).map((k) => [k, setting(k)])), code_dir: DIR, data_dir: DATA }),
+  'GET /api/settings': () => ({ ...Object.fromEntries(Object.keys(SETTINGS).filter((k) => k !== 'connectors').map((k) => [k, setting(k)])), code_dir: DIR, data_dir: DATA }), // connectors hold your xAI key
   'PUT /api/settings': (_, b) => {
-    if (b.default_model !== undefined && !MODELS.includes(b.default_model)) throw new Error('Pick a default model.');
+    if (b.default_model !== undefined && b.default_model !== 'auto' && !modelOk(b.default_model)) throw new Error('Pick a default model.');
     if (b.default_effort !== undefined && b.default_effort !== '' && !EFFORTS.includes(b.default_effort)) throw new Error('Pick a default effort.');
     if (b.default_model !== undefined) setSetting('default_model', b.default_model);
     if (b.default_effort !== undefined) setSetting('default_effort', b.default_effort);
@@ -1422,13 +2030,51 @@ const routes = {
   'PUT /api/employees/:id': (_, b, id) => { if (!employee(id)) throw new Error('No such employee.'); return saveEmployee(b, id); },
   'GET /api/skills': () => findSkills().map(({ dir, ...x }) => (x.mine ? { ...x, ...readSkillMd(fs.readFileSync(path.join(dir, 'SKILL.md'), 'utf8')), name: x.name } : x)),
   'POST /api/skills': (_, b) => saveSkill(b),
-  'POST /api/skills/remove': (_, b) => {
-    const slug = skillSlug(b.slug), id = `orbit/${slug}`;
-    if (!slug || !fs.existsSync(path.join(SKILLS_DIR, slug))) throw new Error('No such skill.');
-    assignSkill(id, []);
-    fs.rmSync(path.join(SKILLS_DIR, slug), { recursive: true, force: true });
+  'POST /api/skills/remove': (_, b) => { // one you made, or one from GitHub
+    const github = String(b.id ?? '').startsWith('github/'), slug = skillSlug(github ? b.id.slice(7) : b.slug), dir = path.join(github ? GITHUB_DIR : SKILLS_DIR, slug);
+    if (!slug || !fs.existsSync(dir)) throw new Error('No such skill.');
+    assignSkill(`${github ? 'github' : 'orbit'}/${slug}`, []);
+    fs.rmSync(dir, { recursive: true, force: true });
   },
+  'POST /api/skills/github': (_, b) => githubSkills(b.url),
   'POST /api/skills/assign': (_, b) => assignSkill(String(b.id), b.employees),
+  // Settings → Connectors: the engines besides Claude. Your xAI key never comes back to the page, only whether there is one.
+  'GET /api/connectors': async (_, b) => {
+    if (b.again || !engineInfo.gpt) await checkEngines();
+    const on = connectors();
+    return { main: mainEngine(), claude: { installed: !!engineInfo.claude?.installed, on: on.claude?.on !== false },
+      engines: Object.entries(ENGINES).map(([key, x]) => ({ key, ...x, ...engineInfo[key], on: !!on[key]?.on, hasKey: !!on[key]?.key, about: ENGINE_ABOUT[key] })) };
+  },
+  'PUT /api/connectors': async (_, b) => {
+    if (b.main !== undefined) { // a new main AI: it must be ready on this computer
+      const m = String(b.main);
+      if (!MAIN_ENGINES.includes(m)) throw new Error('The main AI can be Claude, ChatGPT or Gemini.');
+      await checkEngines();
+      if (m === 'claude' ? !engineInfo.claude.installed : !engineInfo[m]?.signedIn)
+        throw new Error(`${engineLabel(m)} isn't ready on this computer: ${m === 'claude' ? 'install Claude Code and log in' : `install the ${ENGINES[m].tool} and sign in`}, then try again.`);
+      const was = mainEngine();
+      setSetting('main_engine', m);
+      if (m === 'gemini' || was === 'gemini') await setupAntigravity(switchedOn('gemini')); // Orbit's tools in Antigravity follow Gemini
+      return;
+    }
+    const key = String(b.engine), c = connectors();
+    if (!ENGINES[key] && key !== 'claude') throw new Error('No such connector.');
+    c[key] = { ...c[key] };
+    if (typeof b.key === 'string') { if (b.key.trim()) c[key].key = b.key.trim(); else delete c[key].key; }
+    if (typeof b.on === 'boolean') c[key].on = b.on;
+    if (key === 'gemini' && typeof b.on === 'boolean') await setupAntigravity(b.on || mainEngine() === 'gemini'); // Orbit's tools in Antigravity, or taken back out
+    setSetting('connectors', JSON.stringify(c));
+    await checkEngines();
+  },
+  'POST /api/hiring/next': (_, b) => hiringStep(cleanRounds(b.rounds)), // the next questions, or the plan
+  'POST /api/hiring/hire': (_, b) => hireAll(b.hires),
+  'POST /api/employees/import': (_, b) => importPerson(b.file),
+  'POST /api/skills/suggest': async (_, b) => { // who should get these skills, for you to approve: { "<skill id>": [person ids] }
+    const ids = new Set([].concat(b.ids ?? []).map(String)), skills = findSkills().filter((x) => ids.has(x.id) && !x.core);
+    const people = all('SELECT * FROM employees WHERE archived_at IS NULL'), picks = await matchSkills(people, skills);
+    return Object.fromEntries(skills.map((x) => [x.id, people.filter((e) => picks[e.id]?.includes(x.id)).map((e) => e.id)]));
+  },
+  'POST /api/skills/auto': async () => ({ added: await autoSkills(all('SELECT * FROM employees WHERE archived_at IS NULL')) }),
   'POST /api/archive': (_, b) => archive(String(b.kind), Number(b.id), b.archived !== false),
   // The team chart's edit mode: a new boss (or none: straight under you). Never someone who works under them.
   'POST /api/employees/:id/boss': (_, b, id) => setBoss(id, b.reports_to),
@@ -1441,6 +2087,7 @@ const routes = {
     drawing.add(id);
     try {
       fs.writeFileSync(path.join(AVATAR_DIR, `draft-${id}.svg`), await drawAvatar(e, b.style, String(b.details ?? '').trim().slice(0, 300), b.model));
+      rememberPictureStyle(b);
       return { draft: `/avatars/draft-${id}.svg?v=${Date.now()}` };
     } finally { drawing.delete(id); }
   },
@@ -1449,6 +2096,11 @@ const routes = {
     if (!employee(id) || !fs.existsSync(draft)) throw new Error('Nothing to use yet. Generate one first.');
     fs.renameSync(draft, path.join(AVATAR_DIR, `${id}.svg`));
     exec('UPDATE employees SET avatar = ? WHERE id = ?', String(Date.now()), id);
+  },
+  'POST /api/pictures/missing': () => { // everyone without a picture gets one, one at a time, in the background
+    const ids = all("SELECT id FROM employees WHERE avatar = '' AND archived_at IS NULL").map((x) => x.id).filter((id) => !drawing.has(id));
+    (async () => { for (const id of ids) await autoPicture(id).catch(() => {}); })();
+    return { drawing: ids.length };
   },
   'DELETE /api/employees/:id/avatar': (_, b, id) => {
     fs.rmSync(path.join(AVATAR_DIR, `${id}.svg`), { force: true });
@@ -1525,6 +2177,7 @@ const routes = {
     const me = { name: setting('owner_name') || 'the owner', title: 'the owner, who the whole team works for', role: 'Runs the team and decides what gets done.', personality: '', perms: '{}' };
     try {
       fs.writeFileSync(path.join(AVATAR_DIR, 'draft-me.svg'), await drawAvatar(me, b.style, String(b.details ?? '').trim().slice(0, 300), b.model));
+      rememberPictureStyle(b);
       return { draft: `/avatars/draft-me.svg?v=${Date.now()}` };
     } finally { drawing.delete('me'); }
   },
@@ -1604,9 +2257,24 @@ if (import.meta.main) http.createServer(async (req, res) => {
     return res.end(fs.readFileSync(f));
   }
   // "Download a backup": your whole data folder as one file (made fresh each time, then removed).
-  if (req.method === 'GET' && url.pathname === '/api/backup') {
+  const exporting = req.method === 'GET' && url.pathname.match(/^\/api\/(?:employees\/(\d+)|team)\/export$/); // a teammate or the whole team as a file: ?picture=1&skills=1&notes=0
+  if (exporting) {
+    try {
+      const on = (k, fallback) => (url.searchParams.has(k) ? url.searchParams.get(k) === '1' : fallback), what = { picture: on('picture', true), skills: on('skills', true), notes: on('notes', false) };
+      const file = exporting[1] ? exportPerson(Number(exporting[1]), what) : exportTeam(what), owner = setting('owner_name').trim();
+      const name = file.person ? `${file.person.name} (Orbit teammate)` : `${owner ? `${owner}'s` : 'My'} Orbit team (${file.people.length} people)`;
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Disposition': `attachment; filename="${name.replace(/["\\]/g, '')}.json"` });
+      return res.end(JSON.stringify(file));
+    } catch (err) { return send(400, { error: err.message }); }
+  }
+  if (req.method === 'GET' && url.pathname === '/api/backup/parts') { // what you can pick, and how big each is
+    const size = partSizes(DATA);
+    return send(200, { core: size.core, parts: Object.entries(PARTS).map(([key, p]) => ({ key, label: p.label, what: p.what, size: size[key] })) });
+  }
+  if (req.method === 'GET' && url.pathname === '/api/backup') { // ?parts=memory,pictures,… picks what goes in (all if left out)
     const file = path.join(os.tmpdir(), `orbit-backup-${crypto.randomBytes(4).toString('hex')}.tar.gz`);
-    try { await makeBackup(DATA, file); } catch (err) { fs.rmSync(file, { force: true }); return send(500, { error: `Couldn't make the backup: ${err.message}` }); }
+    const parts = url.searchParams.has('parts') ? url.searchParams.get('parts').split(',').filter((k) => PARTS[k]) : undefined;
+    try { await makeBackup(DATA, file, parts); } catch (err) { fs.rmSync(file, { force: true }); return send(500, { error: `Couldn't make the backup: ${err.message}` }); }
     res.writeHead(200, { 'Content-Type': 'application/gzip', 'Content-Length': fs.statSync(file).size,
       'Content-Disposition': `attachment; filename="Orbit backup ${new Date().toISOString().slice(0, 10)}.tar.gz"` });
     return fs.createReadStream(file).on('close', () => fs.rmSync(file, { force: true })).pipe(res);
@@ -1623,7 +2291,7 @@ if (import.meta.main) http.createServer(async (req, res) => {
   if (!handler) return send(404, { error: 'Not found' });
   try {
     let raw = '';
-    const limit = url.pathname === '/api/uploads' ? 36e6 : 5e6; // uploads up to 25 MB (sent as base64); everything else is small
+    const limit = ['/api/uploads', '/api/employees/import'].includes(url.pathname) ? 36e6 : 5e6; // files up to 25 MB (sent as base64); everything else is small
     for await (const chunk of req) if ((raw += chunk).length > limit) throw new Error('Too large.');
     const body = raw ? JSON.parse(raw) : Object.fromEntries(url.searchParams); // GET details come in the address
     const t = url.pathname.startsWith('/api/tasks/') ? task(id) : null;
@@ -1642,6 +2310,8 @@ if (import.meta.main) http.createServer(async (req, res) => {
   }
   runSchedules();
   setInterval(runSchedules, 30_000);
+  // Which engines are ready (the first time: which is the main AI), and Orbit's tools kept connected in Antigravity (the app may have moved).
+  checkEngines().then(() => { pickMainEngine(); return switchedOn('gemini') && setupAntigravity(true); }).catch(() => {});
   // Closing the app stops everyone, so nothing keeps running (and using your plan) in the background.
   for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { for (const c of [...running.values(), ...reflecting.values()]) c.kill(); process.exit(); });
   console.log(`Orbit is running → http://localhost:${PORT}`);

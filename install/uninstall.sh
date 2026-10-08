@@ -46,6 +46,11 @@ else
   pkill -f "$APP/server.js" >/dev/null 2>&1 || true
 fi
 
+# 1b. What Orbit added to Antigravity (Gemini): its "orbit" tool connection and the rule that allows it. A settings file it can't read is left alone.
+AGY="$(command -v agy 2>/dev/null || { [ -x "$HOME/.local/bin/agy" ] && echo "$HOME/.local/bin/agy"; } || true)"
+if [ -n "$AGY" ] && "$AGY" mcp list 2>/dev/null | grep -q 'mcp-bridge.mjs'; then "$AGY" mcp remove orbit >/dev/null 2>&1 || true; fi
+node -e 'const fs = require(`fs`), f = require(`path`).join(require(`os`).homedir(), `.gemini`, `antigravity-cli`, `settings.json`); let j; try { j = JSON.parse(fs.readFileSync(f, `utf8`)); } catch { process.exit(); } const a = j.permissions?.allow; if (!Array.isArray(a) || !a.includes(`mcp(orbit/*)`)) process.exit(); j.permissions.allow = a.filter((x) => x !== `mcp(orbit/*)`); fs.writeFileSync(f, JSON.stringify(j, null, 2) + `\n`);' 2>/dev/null || true
+
 # 2. Your data
 TOOL="$SRC/backup.mjs"; [ -f "$TOOL" ] || TOOL="$APP/backup.mjs"
 CHOICE=1

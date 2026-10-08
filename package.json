@@ -1,7 +1,7 @@
 {
   "name": "orbit",
   "version": "1.0.0",
-  "description": "Your personal team of Claude employees, running on your own computer.",
+  "description": "Your personal team of AI employees, running on your own computer, on Claude, ChatGPT or Gemini.",
   "type": "module",
   "main": "server.js",
   "private": true,

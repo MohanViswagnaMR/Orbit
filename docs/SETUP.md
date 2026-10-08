@@ -6,7 +6,7 @@ This guide takes you from nothing to a working Orbit, step by step. It takes abo
 
 1. [What you need](#1-what-you-need)
 2. [Install Node.js](#2-install-nodejs)
-3. [Install Claude Code and log in](#3-install-claude-code-and-log-in)
+3. [Install an AI and sign in](#3-install-an-ai-and-sign-in)
 4. [Download Orbit](#4-download-orbit)
 5. [Run the installer](#5-run-the-installer)
 6. [Your first five minutes](#6-your-first-five-minutes)
@@ -24,13 +24,12 @@ This guide takes you from nothing to a working Orbit, step by step. It takes abo
 | | Why |
 |---|---|
 | A Mac, a Windows PC or a Linux PC | Orbit runs on your own computer. |
-| A Claude plan that includes Claude Code | Your team works through Claude Code, on your account. Their work counts towards your plan. |
+| One AI, signed in: **Claude Code** (a Claude plan), the **Codex CLI** (a ChatGPT account) or the **Antigravity CLI** (a Google account) | Your team works through it, on your account. Their work counts towards your plan. You can add the others later. |
 | Node.js 24 or newer | Orbit is a small Node.js program. |
-| Claude Code, logged in | Each employee is a Claude Code session. |
-| **Windows only:** Git for Windows | Claude Code uses it to run commands. |
+| **Windows, with Claude Code:** Git for Windows | Claude Code uses it to run commands. |
 | A web browser | Orbit opens at `http://localhost:4321`. |
 
-Already have Node.js 24+ and Claude Code? Skip to [step 4](#4-download-orbit).
+Already have Node.js 24+ and one of those AIs signed in? Skip to [step 4](#4-download-orbit).
 
 ## 2. Install Node.js
 
@@ -51,7 +50,11 @@ If it prints `v24` or a higher number, you're set. Otherwise:
 
 Close the terminal and open a new one, then run `node --version` again to check.
 
-## 3. Install Claude Code and log in
+## 3. Install an AI and sign in
+
+Your team can run on **Claude**, **ChatGPT** or **Gemini**. You need one; the installer finds whichever you have, and asks which should run your team if you have more than one. Claude is the most complete: only Claude teammates can ask you for approval in the middle of a task (on the others, anything their file access doesn't allow is simply blocked).
+
+### Claude (Claude Code)
 
 - **macOS and Linux:** in a terminal, run:
   ```sh
@@ -63,6 +66,18 @@ Close the terminal and open a new one, then run `node --version` again to check.
   ```
 
 Then log in. Run `claude`, follow the steps in your browser, and type `/exit` once it says you're logged in. Orbit uses this login. It never asks for a password or an API key.
+
+### ChatGPT (Codex CLI)
+
+- **macOS:** `brew install --cask codex`. **Windows, Linux:** `npm install -g @openai/codex`. Or see [developers.openai.com/codex/cli](https://developers.openai.com/codex/cli).
+- Then run `codex login` and sign in with your ChatGPT account.
+
+### Gemini (Antigravity CLI)
+
+- Install Google Antigravity from [antigravity.google](https://antigravity.google) and its command-line tool (`agy`).
+- Then run `agy` once and sign in with your Google account.
+
+You can change which AI runs your team, or switch on the others too, any time in Settings → **Connectors**.
 
 ## 4. Download Orbit
 
@@ -105,7 +120,7 @@ bash install/install.sh
 
 ### What the installer does
 
-1. Checks for Node.js 24+ and Claude Code, and tells you what to install if something is missing.
+1. Checks for Node.js 24+ and for Claude Code, the Codex CLI and the Antigravity CLI (one is enough), and tells you what to install if something is missing. For a new team, if it finds more than one, it asks which AI should run it.
 2. Copies Orbit to its own folder (see [where everything is](#9-where-everything-is)).
 3. Looks for your Orbit data:
    - **If you've used Orbit on this computer before,** it shows whose team it is and how many people and chats are in it, then asks:
@@ -123,25 +138,31 @@ When it's done you'll see `Orbit is running at http://localhost:4321`.
 
 ## 6. Your first five minutes
 
-1. **Tell Orbit your name.** Settings (bottom left) → **General** → **Your name**. Your team calls you by it. You can also add a profile picture here.
-2. **Hire your first employee.** Settings → **Team** → **Hire someone**. Give them:
-   - a **name**;
-   - a **title**;
-   - a **job description** (what they do, and what good work looks like);
-   - a **personality**.
+1. **Hire your first teammate.** A new Orbit opens with a welcome card:
+   - **Hire with help:** Orbit's hiring assistant asks you a few rounds of questions, proposes people, and hires the ones you pick, with their pictures drawn for them.
+   - **Set one up yourself:** give them a **name**, a **title**, a **job description** (what they do, and what good work looks like) and a **personality**.
 
-   A good first hire is a general assistant who runs the team for you.
-3. **Make them your main assistant.** Settings → **General** → **Main assistant**. New chats start with them, and they can hand work to the rest of the team.
-4. **Start a chat** on the home page. Ask for something real, like a plan, some research or a small website.
+   Your first hire becomes your **main assistant**: new chats start with them, and they hand work to the rest of the team. You can change who it is in Settings → **General** → **Main assistant**.
+2. **Tell Orbit your name.** Settings (bottom left) → **General** → **Your name**. Your team calls you by it. You can also add a profile picture here.
+3. **Start a chat** on the home page. Ask for something real, like a plan, some research or a small website.
 5. **Optional: use Orbit as an app.** In Chrome or Edge, click the install icon at the right of the address bar. In Safari on a Mac, use **File → Add to Dock**. Orbit then gets its own window and Dock or taskbar icon.
 
 ### Good to know
 
 - **Permissions:** in Settings → Team → *someone* → **File access**, choose Read only, Can edit (their own folder) or Full access. Anything beyond that pops up and asks you first.
 - **Inbox:** collects everything waiting on you: approvals, finished work to check, and questions.
-- **Projects:** give a group of chats and tasks a folder and a shared memory.
-- **Skills:** Settings → **Skills**. Give people the skills they need, or write your own.
-- **Models:** Settings → General sets the default model and effort. Every chat can change them, and every reply shows the exact model that wrote it.
+- **Live:** every chat and task that's running right now. While someone is working, **Interrupt** (⌘↩) stops them and sends your new message straight away.
+- **Projects:** give a group of chats and tasks a folder and a shared memory. Archiving a project archives its chats and tasks too.
+- **Skills:** Settings → **Skills**. Write your own, import a SKILL.md, or add skills from a GitHub link (Orbit suggests who needs them, and you approve). **Assign automatically** reads everyone's job and gives them the skills that fit. Orbit's **core skills** are for everyone: they're how the team hands out work, picks models, checks results and reports back.
+- **Sharing:** Settings → Team → **Export the team**, or **Export** on a teammate's page, saves them with their skills as one file a friend can import. Importing never overwrites anyone.
+- **Backups:** Settings → General → **Download a backup**. Tick what goes in.
+- **Models:** everyone starts on **Auto**: for each new chat or task, Orbit picks the lightest model that will do it well, and says which in the chat. Pick a model for someone in Settings → Team, or for one chat in its message box. Every reply shows the exact model that wrote it. Settings → General sets the backup model and the default effort.
+- **Your main AI and the others:** Settings → **Connectors**. Your **main AI** runs Orbit's own jobs (Auto's picks, pictures, the hiring assistant, skill matching) and is always on; **Make main** changes it. Switch the others on or off to use their models too. Each runs through its own program on your computer, signed in with your own account:
+  - **ChatGPT:** install the Codex CLI (`brew install --cask codex` on a Mac, or see [developers.openai.com/codex/cli](https://developers.openai.com/codex/cli)), then run `codex login`.
+  - **Gemini:** install Google Antigravity and its command-line tool (`agy`), then run `agy` once and sign in with Google.
+  - **Grok:** needs the Codex CLI too, plus an API key from [console.x.ai](https://console.x.ai), pasted into the Grok card.
+
+  Then switch it on. ChatGPT and Gemini teammates can't ask you for approval mid-task: whatever their file access doesn't allow is simply blocked, and they say so.
 
 ## 7. Updating Orbit
 
@@ -157,6 +178,8 @@ This stops Orbit, stops it starting at login, and deletes the app. Then it shows
 1. **Keep it there** (recommended). Installing Orbit again finds it.
 2. **Save a backup file, then remove it.** The file (`Orbit backup <date>.tar.gz`) goes in your home folder (your user folder on Windows). Keep it anywhere, such as cloud storage or a USB stick.
 3. **Delete it.**
+
+It also removes the "orbit" tool connection Orbit added to Antigravity, if you used Gemini. A settings file it can't read is left alone.
 
 If you added Orbit as an app in your browser ([step 6](#6-your-first-five-minutes)), the uninstaller removes that too:
 - **macOS:** it deletes the Chrome, Edge or Brave app and its Dock icon. Chrome may still list it on `chrome://apps`: right-click it there, choose **Remove from Chrome** and tick **Also clear data**. A Safari app isn't found automatically: delete `Orbit.app` from the Applications folder in your home folder.
@@ -177,7 +200,8 @@ Your data folder holds everything about you and your team:
 
 The app folder holds only the program, so you can delete, update or reinstall the app freely.
 
-- **Make a backup any time:** Settings → General → **Your data** → **Download a backup**. Your browser saves it as one `.tar.gz` file, usually in Downloads. It's safe to do while your team is working.
+- **Make a backup any time:** Settings → General → **Your data** → **Download a backup**. Tick what goes in: your team, chats, tasks, projects and settings always do; notes and project memory, pictures, skills, attached files and your team's work folders are up to you. Your browser saves it as one `.tar.gz` file, usually in Downloads. It's safe to do while your team is working.
+- **Share a teammate or your whole team:** on someone's page click **Export**, or in Settings → Team click **Export the team**. You get one file with their jobs, personalities, rules, pictures and skills (the team file also keeps who reports to whom; notes only if you tick them; chats and work never). Your friend adds it in Settings → Team → **Import**. Only import from people you trust: skills can include scripts.
 - **Bring a backup back:** run the installer. When it asks whether you have a backup, drag the file into the window and press Enter.
 - **Move to another computer:** make a backup, then install Orbit on the new computer and give it the backup. Each person's work folder moves with the data. Project folders you picked yourself (for example `~/Projects/my-site`) are your own files, not part of the backup; copy those over yourself.
 - **Start over without losing anything:** run the installer and choose **Start completely fresh**. Your old data is moved aside, not deleted.
@@ -223,11 +247,11 @@ It shows the restart command for your computer, with a Copy button. If that does
 **"Node.js isn't installed", or the version is too old.**
 Install or update it ([step 2](#2-install-nodejs)), open a *new* terminal, and run the installer again. If you update Node.js later (for example with `nvm`), run the installer again so Orbit uses the new one.
 
-**"Claude Code isn't installed".**
-Do [step 3](#3-install-claude-code-and-log-in), open a new terminal, and run the installer again. On Windows, Orbit needs the native `claude.exe` from the PowerShell installer, not a copy installed with npm.
+**"Orbit needs one AI to run your team, and none was found".**
+Do [step 3](#3-install-an-ai-and-sign-in), open a new terminal, and run the installer again. On Windows, Claude needs the native `claude.exe` from the PowerShell installer, not a copy installed with npm.
 
 **Every reply fails, or says to log in.**
-Open a terminal, run `claude`, and log in again. Then send your message again in Orbit.
+Open a terminal and sign in again: `claude` (Claude), `codex login` (ChatGPT) or `agy` (Gemini). Then send your message again in Orbit. Settings → Connectors shows which AIs are ready.
 
 **"Address already in use" in the log.**
 Another program uses port 4321. Install again with a different port, for example `ORBIT_PORT=4400`.

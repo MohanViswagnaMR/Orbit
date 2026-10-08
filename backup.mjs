@@ -14,6 +14,17 @@ import { DatabaseSync } from 'node:sqlite';
 // tar comes with macOS, Linux and Windows 10+. On Windows use the system's own, not another one that may be on PATH.
 const TAR = process.platform === 'win32' ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe') : 'tar';
 const LEAVE_OUT = new Set(['skillsets', 'briefs', 'google-fonts.json', 'server.log', 'crew.db', 'crew.db-wal', 'crew.db-shm', 'crew.db-journal']); // temporary, re-made, or copied separately
+// What a backup can hold besides the database (team, chats, tasks, projects, settings), which always goes in.
+export const PARTS = {
+  memory: { label: 'Notes and project memory', what: 'What each person and each project has learned', dirs: ['notes', 'projects'] },
+  pictures: { label: 'Profile pictures and background', what: "Your team's pictures, yours, and your background image", dirs: ['avatars', 'appearance'] },
+  skills: { label: 'Skills you made or added', what: 'Made in Orbit, and added from GitHub', dirs: ['skills', 'skills-github'] },
+  uploads: { label: 'Files you attached', what: 'Files you uploaded into chats', dirs: ['uploads'] },
+  work: { label: "Your team's work folders", what: 'Files they made in their own folders. Project folders elsewhere are never included', dirs: ['workspace'] },
+};
+const partOf = (name) => Object.keys(PARTS).find((k) => PARTS[k].dirs.includes(name));
+const sizeOf = (p) => { try { const st = fs.lstatSync(p); return st.isDirectory() ? fs.readdirSync(p).reduce((n, f) => n + sizeOf(path.join(p, f)), 0) : st.size; } catch { return 0; } };
+export const partSizes = (dir) => ({ core: sizeOf(path.join(dir, 'crew.db')), ...Object.fromEntries(Object.entries(PARTS).map(([k, p]) => [k, p.dirs.reduce((n, d) => n + sizeOf(path.join(dir, d)), 0)])) });
 const run = (args, opts = {}) => new Promise((ok, no) => {
   const c = spawn(TAR, args, { stdio: ['ignore', 'pipe', 'pipe'], ...opts });
   let out = '', err = '';
@@ -42,17 +53,32 @@ export function summary(dir) {
 }
 
 // Back up a data folder into one file. Safe while Orbit is running: the database is copied as a consistent snapshot.
-export async function makeBackup(dir, file) {
+// parts: which of PARTS go in (all by default).
+export async function makeBackup(dir, file, parts = Object.keys(PARTS)) {
+  const keep = new Set(parts);
   dir = path.resolve(dir);
   if (!fs.existsSync(path.join(dir, 'crew.db'))) throw new Error(`There's no Orbit data in ${dir}.`);
   const stage = fs.mkdtempSync(path.join(os.tmpdir(), 'orbit-backup-'));
   try {
     for (const name of fs.readdirSync(dir)) {
-      if (!LEAVE_OUT.has(name)) await fs.promises.cp(path.join(dir, name), path.join(stage, name), { recursive: true, verbatimSymlinks: true });
+      const part = partOf(name);
+      if (!LEAVE_OUT.has(name) && (!part || keep.has(part))) await fs.promises.cp(path.join(dir, name), path.join(stage, name), { recursive: true, verbatimSymlinks: true });
     }
     const db = new DatabaseSync(path.join(dir, 'crew.db'));
     try { db.exec(`VACUUM INTO '${path.join(stage, 'crew.db').replaceAll("'", "''")}'`); } finally { db.close(); }
-    const about = { orbit: 1, created: new Date().toISOString(), from: dir, system: process.platform, ...summary(stage) };
+    const snap = new DatabaseSync(path.join(stage, 'crew.db')); // what was left out is forgotten too: no broken pictures or missing skills after a restore
+    try {
+      try { snap.exec("UPDATE settings SET value = json_remove(value, '$.grok.key') WHERE key = 'connectors' AND json_valid(value)"); } catch {} // your xAI key stays on this Mac
+      if (!keep.has('pictures')) try { snap.exec("UPDATE employees SET avatar = ''; UPDATE settings SET value = '' WHERE key = 'owner_avatar';"); } catch {} // older data may lack these
+      if (!keep.has('skills')) try {
+        for (const e of snap.prepare('SELECT id, skills FROM employees').all()) {
+          let list = [];
+          try { list = JSON.parse(e.skills || '[]'); } catch {}
+          snap.prepare('UPDATE employees SET skills = ? WHERE id = ?').run(JSON.stringify(list.filter((id) => !/^(orbit|github)\//.test(id))), e.id);
+        }
+      } catch {}
+    } finally { snap.close(); }
+    const about = { orbit: 1, created: new Date().toISOString(), from: dir, system: process.platform, parts: [...keep].filter((k) => PARTS[k]), ...summary(stage) };
     fs.writeFileSync(path.join(stage, 'orbit-backup.json'), JSON.stringify(about, null, 2));
     fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
     await run(['-czf', path.resolve(file), '-C', stage, '.']);

@@ -304,20 +304,127 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { ap
   .meta { font-size: 13px; color: var(--muted); white-space: nowrap; }
   .send { width: 32px; height: 32px; border-radius: 10px; background: var(--accent); color: var(--accent-text); display: grid; place-items: center; flex: none; }
   .send:disabled { opacity: .4; cursor: default; }
-  .under { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: -16px 14px 0; padding: 26px 12px 12px; border: 1px solid var(--line); border-top: 0; border-radius: 0 0 18px 18px;
-    background: color-mix(in srgb, var(--raised) 55%, transparent); backdrop-filter: blur(18px); box-shadow: 0 10px 30px rgb(0 0 0 / .12); }
-  .under .chip { padding: 6px 12px 6px 10px; border: 1px solid var(--line); border-radius: 999px; background: color-mix(in srgb, var(--raised) 75%, transparent); color: var(--muted); transition: color .15s, border-color .15s, background .15s; }
-  .under .chip:hover, .under .chip:focus-within { color: var(--text); border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); background: color-mix(in srgb, var(--accent) 12%, var(--raised)); }
-  .under .chip > .i:first-child { color: var(--accent); }
-  .under .chip > .i:last-child:not(:first-child) { width: 13px; height: 13px; opacity: .55; margin-left: -2px; } /* the dropdown arrow */
-  .under .chip select { field-sizing: content; color: inherit; }
-  .under .chip[data-browse] { flex: 1 1 130px; max-width: 280px; min-width: 0; cursor: pointer; } /* the folder takes what's left of the row */
+  /* under the home composer: a strip the full width of the box, with plain controls (like the Claude app) */
+  .under { display: flex; flex-wrap: wrap; gap: 2px; align-items: center; margin: -18px 0 0; padding: 24px 8px 7px; border: 1px solid var(--line); border-top: 0; border-radius: 0 0 18px 18px;
+    background: color-mix(in srgb, var(--raised) 45%, transparent); backdrop-filter: blur(18px); }
+  .under .chip { padding: 6px 9px; color: var(--muted); transition: color .15s, background .15s; }
+  .under .chip:hover, .under .chip:focus-within { color: var(--text); }
+  .under .chip .av { width: 20px; height: 20px; border-radius: 50%; font-size: 10px; }
+  .under .chip > .i:last-child:not(:first-child) { width: 13px; height: 13px; opacity: .6; margin-left: -2px; } /* the dropdown arrow */
+  .under .chip[data-browse] { max-width: 240px; min-width: 0; cursor: pointer; }
   .under .chip[data-browse] span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+  #newWhoPic { display: contents; }
+  /* model and effort inside the composer: just their names, "Opus  Extra" */
+  .composer .bar .chip > .i { display: none; }
+  .composer .bar .chip { padding: 5px 7px; color: var(--text); }
+  .composer .bar .chip.soft { margin-left: -6px; color: var(--muted); }
   .chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 8px; font-size: 13px; }
   .chip:hover, .chip:focus-within { background: var(--hover); }
   .chip select, .chip input { border: 0; background: none; outline: none; font-size: 13px; padding: 0; min-width: 0; }
-  .chip select { appearance: none; cursor: pointer; }
-  .chip select option { background: var(--raised); }
+  .chip select::picker-icon { display: none; } /* chips draw their own arrow */
+  @supports not (appearance: base-select) { .chip select ~ svg { display: none; } } /* the arrow after a menu: browsers without Chrome's menus draw their own (Firefox, Zen, Safari) */
+
+  .av.drawing { animation: avpulse 1.4s ease-in-out infinite; } /* their picture is being drawn */
+  @keyframes avpulse { 50% { opacity: .45; } }
+  .ibtn { padding: 5px 11px; border-radius: 9px; font-size: 13px; color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line)); }
+  .ibtn:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  /* Live */
+  .ltiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 4px 0 20px; }
+  .ltile { display: flex; flex-direction: column; gap: 2px; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--line); background: color-mix(in srgb, var(--raised) 70%, transparent); }
+  .ltile b { font-size: 26px; font-weight: 600; line-height: 1.15; }
+  .ltile span { font-size: 12.5px; color: var(--muted); }
+  .ltile.on b { color: var(--live); }
+  .ltile.warn b { color: var(--accent); }
+  a.ltile:hover { border-color: var(--line-strong); }
+  .lgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; }
+  .lcard { display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 16px; border-radius: 16px; border: 1px solid color-mix(in srgb, var(--live) 30%, var(--line));
+    background: color-mix(in srgb, var(--raised) 80%, transparent); box-shadow: 0 8px 24px rgb(0 0 0 / .12); }
+  .lhead { display: flex; align-items: center; gap: 12px; }
+  .lhead .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .lhead .main a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 13px; }
+  .lhead .main a:hover { color: var(--text); text-decoration: underline; }
+  .lnow { display: flex; gap: 8px; align-items: flex-start; min-height: 42px; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--bg) 70%, transparent); font: 12.5px/1.45 var(--mono); color: var(--muted); }
+  .lnow > .i { flex: none; width: 14px; height: 14px; margin-top: 2px; color: var(--accent); }
+  .lnow > span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+  .lfoot { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+  .lteam { display: flex; flex-wrap: wrap; gap: 10px; padding: 6px 4px; }
+  .lperson { padding: 2px; border: 2px solid transparent; border-radius: 14px; opacity: .5; transition: opacity .15s; }
+  .lperson:hover { opacity: 1; }
+  .lperson.on { opacity: 1; border-color: var(--live); box-shadow: 0 0 0 4px color-mix(in srgb, var(--live) 16%, transparent); }
+  .skused { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; font-size: 12px; color: var(--muted); }
+  .skused > .i { width: 14px; height: 14px; color: var(--accent); }
+  .skused .sk { padding: 2px 9px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--text); }
+  .sknote { display: flex; gap: 8px; align-items: flex-start; margin: 0 0 12px; padding: 10px 12px; border-radius: 12px; font-size: 13px; line-height: 1.5;
+    background: color-mix(in srgb, var(--accent) 10%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line)); }
+  .sknote > .i { flex: none; margin-top: 2px; color: var(--accent); }
+  .ghform { margin: 0 0 12px; }
+  #skAssignDialog { width: min(640px, calc(100% - 32px)); }
+  .skalist { display: flex; flex-direction: column; gap: 10px; max-height: 58vh; overflow: auto; margin: 0 -4px; padding: 0 4px; }
+  .skasec { padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--bg) 50%, transparent); }
+  .skasec .t { display: flex; align-items: center; gap: 8px; }
+  .skasec .t .i { width: 15px; height: 15px; color: var(--accent); }
+  .skasec .t .hint { margin-left: auto; }
+  .skasec .sub { margin: 4px 0 10px; font-size: 12.5px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .skapeople { display: flex; flex-wrap: wrap; gap: 6px; }
+  .skperson:disabled { opacity: .5; }
+  .bklist { display: flex; flex-direction: column; gap: 8px; }
+  .bkrow { display: flex; flex-direction: row; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; cursor: pointer; }
+  .bkrow:has(input:checked:not(:disabled)) { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  .bkrow input { width: 18px; height: 18px; flex: none; accent-color: var(--accent); }
+  .bkrow > span:not(.hint) { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+  .bkrow b { font-weight: 600; font-size: 13.5px; }
+  .bkrow small { font-weight: 400; color: var(--muted); font-size: 12px; }
+  .bkrow .hint { white-space: nowrap; }
+  /* hire with help */
+  #hireDialog { width: min(680px, calc(100% - 32px)); }
+  #hireDialog .hhead { display: flex; align-items: baseline; gap: 12px; }
+  #hBody { display: flex; flex-direction: column; gap: 14px; max-height: 62vh; overflow: auto; margin: 0 -4px; padding: 0 4px; }
+  .hbusy { display: flex; align-items: center; gap: 10px; padding: 30px 4px; color: var(--muted); }
+  .hbusy .i { width: 18px; height: 18px; color: var(--accent); animation: avpulse 1.4s ease-in-out infinite; }
+  .hq { display: flex; flex-direction: column; gap: 8px; }
+  .hopts { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+  .hopt { display: flex; flex-direction: column; gap: 2px; padding: 9px 12px; border: 1px solid var(--line-strong); border-radius: 12px; text-align: left; background: var(--bg); }
+  .hopt b { font-weight: 500; font-size: 13.5px; }
+  .hopt small { color: var(--muted); font-size: 12px; line-height: 1.35; }
+  .hopt:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--line-strong)); }
+  .hopt.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--bg)); }
+  .hother { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; background: transparent; font-size: 13px; }
+  .hother:focus { outline: none; border-color: var(--accent); }
+  .hsum { margin: 0; line-height: 1.5; }
+  .hcard { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px solid var(--line-strong); border-radius: 14px; background: color-mix(in srgb, var(--bg) 50%, transparent); }
+  .hcard.off { opacity: .55; }
+  .hcard .hrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .hcard .hrow label { flex: 1 1 140px; }
+  .hcard .hname { width: 130px; font-weight: 600; }
+  .hcard .htitle { flex: 1; min-width: 160px; }
+  .hcard input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
+  .hwhy { margin: 0; font-size: 12.5px; color: var(--muted); }
+  .hcard details summary { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12.5px; color: var(--muted); list-style: none; }
+  .hcard details[open] summary .chev { rotate: 90deg; }
+  .hcard details > label { margin-top: 10px; }
+  .hdone { display: flex; flex-direction: column; }
+  .ghform .hint { margin: 6px 2px 0; }
+  /* every dropdown: Chrome's customizable select, opening a floating card. Other browsers keep their own menu. */
+  select, ::picker(select) { appearance: base-select; }
+  select { min-height: 0; cursor: pointer; }
+  select > button { display: flex; align-items: center; padding: 0; border: 0; background: none; color: inherit; font: inherit; line-height: 1.2; }
+  select::picker-icon { content: ''; width: 14px; height: 14px; background: var(--faint); transition: rotate .15s;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat; }
+  select:open::picker-icon { rotate: 180deg; }
+  selectedcontent .av, selectedcontent small { display: none !important; } /* closed, a menu shows just the name, whatever the page styles small text as */
+  selectedcontent .who { display: contents; }
+  selectedcontent b { font-weight: inherit; }
+  ::picker(select) { margin-block: 8px; padding: 6px; min-width: 200px; max-height: min(380px, 60vh); border: 1px solid var(--line-strong); border-radius: 14px; color: var(--text);
+    background: color-mix(in srgb, var(--raised) 94%, transparent); backdrop-filter: blur(20px); box-shadow: 0 18px 50px rgb(0 0 0 / .3); }
+  option { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 9px; font-size: 13.5px; background: none; cursor: pointer; }
+  option:hover, option:focus-visible { background: var(--hover); outline: none; }
+  option:checked { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+  option::checkmark { order: 2; margin-left: auto; color: var(--accent); }
+  option small { color: var(--muted); }
+  option .av { width: 28px; height: 28px; margin: 0; border-radius: 50%; font-size: 12px; }
+  option .who { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+  option .who b { font-weight: 500; }
+  option .who small { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; }
   .chip input { width: 180px; }
 
   /* home */
@@ -325,7 +432,9 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { ap
   .greet { font: 400 40px/1.15 var(--serif); letter-spacing: -.01em; margin: 0 0 30px; display: flex; justify-content: center; align-items: center; gap: 14px; text-align: center; }
   .greet .star svg { width: 38px; height: 38px; }
   .cta { text-align: center; padding: 28px; border: 1px dashed var(--line-strong); border-radius: 18px; color: var(--muted); }
-  .cta .btn { margin-top: 12px; }
+  .cta > b { display: block; color: var(--text); font: 400 22px var(--serif); }
+  .cta p { margin: 8px auto 0; max-width: 440px; line-height: 1.5; }
+  .ctabtns { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
   .homelist { margin-top: 44px; }
   .homelist h3 { display: flex; justify-content: space-between; font-size: 13px; font-weight: 500; color: var(--muted); margin: 0 6px 4px; }
   .homelist h3 a:hover { color: var(--text); }
@@ -425,8 +534,9 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { ap
   .sform footer { display: flex; gap: 8px; align-items: center; }
   .who-can { font-size: 12px; color: var(--faint); margin-top: 6px; }
   .editor .scard > h3 { margin-bottom: 0; }
-  .tl-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
-  .tl-head > div { flex: 1; }
+  .tl-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 12px; margin-bottom: 14px; }
+  .tl-head > div { flex: 1 1 340px; } /* the buttons wrap under the text when there's no room beside it */
+  .tl-btns { display: flex; flex-wrap: wrap; gap: 8px; }
   .tl-head p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
   .tgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
   .tcard { display: grid; gap: 10px; padding: 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--bg); min-width: 0; transition: border-color .12s, transform .12s, box-shadow .12s; }
@@ -489,8 +599,9 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { ap
   .cp .tip small { font-size: 12px; color: var(--muted); }
   @media (max-width: 900px) { .crewstack { display: none; } }
   @media (prefers-reduced-motion: reduce) { .cp, .cp .tip { transition: none; } }
-  .skq { width: 100%; border: 1px solid var(--line-strong); border-radius: 10px; padding: 8px 12px; background: var(--bg); margin-bottom: 12px; }
-  .skq:focus { outline: none; border-color: var(--accent); }
+  .skq, .ghform input { width: 100%; border: 1px solid var(--line-strong); border-radius: 10px; padding: 8px 12px; background: var(--bg); margin-bottom: 12px; }
+  .skq:focus, .ghform input:focus { outline: none; border-color: var(--accent); }
+  .ghform input { margin: 0; }
   .skgroup { border-top: 1px solid var(--line); }
   .skgroup > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; padding: 12px 2px; }
   .skgroup > summary::-webkit-details-marker { display: none; }
@@ -504,6 +615,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { ap
   .skrow .sub { font-size: 12.5px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .skicon { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; flex: none; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
   .skicon.mine { color: var(--s-done); background: color-mix(in srgb, var(--s-done) 14%, transparent); }
+  .skicon.core { color: var(--accent-text); background: var(--accent); }
   .skicon svg { width: 16px; height: 16px; }
   .skrow .avstack .av { box-shadow: 0 0 0 2px var(--side); }
   .skpeople { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0 4px 42px; }
@@ -602,9 +714,28 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { ap
   .switchrow .grow { display: grid; min-width: 0; }
   .switchrow b { font-size: 14px; font-weight: 600; }
   .switchrow small { color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
-  .sform input.switch { appearance: none; width: 38px; height: 22px; padding: 0; border-radius: 999px; border: 0; background: var(--line-strong); position: relative; flex: none; cursor: pointer; transition: background .15s; }
+  .sform input.switch, .conn input.switch { appearance: none; width: 38px; height: 22px; padding: 0; border-radius: 999px; border: 0; background: var(--line-strong); position: relative; flex: none; cursor: pointer; transition: background .15s; }
+  .conn input.switch:disabled { opacity: .4; cursor: default; }
+  .conn input.switch:checked { background: var(--accent); }
+  /* Settings → Connectors */
+  .conns { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+  .conn { display: flex; flex-direction: column; gap: 10px; padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: color-mix(in srgb, var(--raised) 70%, transparent); }
+  .conn.on { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+  .conn .chead { display: flex; align-items: center; gap: 12px; }
+  .conn .chead .main { flex: 1; display: flex; flex-direction: column; }
+  .conn .chead small { color: var(--muted); font-size: 12px; }
+  .conn .cicon { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; font-weight: 700; color: #fff; flex: none; }
+  .conn .about { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+  .conn .cstat { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
+  .conn .cstat .ok { color: var(--s-done); }
+  .conn .cstat .no { color: var(--muted); }
+  .conn .cstat code { font: 11.5px var(--mono); padding: 1px 6px; border-radius: 6px; background: var(--bg); }
+  .conn .cmodels { display: flex; flex-wrap: wrap; gap: 4px; }
+  .conn .cmodels span { padding: 2px 8px; border-radius: 999px; font-size: 11.5px; border: 1px solid var(--line); color: var(--muted); }
+  .conn .ckey { display: flex; gap: 6px; }
+  .conn .ckey input { flex: 1; min-width: 0; border: 1px solid var(--line-strong); border-radius: 9px; padding: 6px 10px; background: var(--bg); font-size: 13px; }
   .switch::after { content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / .3); transition: transform .15s; }
-  .sform input.switch:checked { background: var(--accent); }
+  .sform input.switch:checked, .conn input.switch:checked { background: var(--accent); }
   .switch:checked::after { transform: translateX(16px); }
   .switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .savebar { position: sticky; bottom: 12px; z-index: 5; padding: 10px 12px; border-radius: 14px; background: var(--raised); border: 1px solid var(--line-strong); box-shadow: 0 10px 30px rgb(0 0 0 / .25); flex-wrap: wrap; }
@@ -931,7 +1062,9 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { ap
   .lookrow input[type=range] { width: 220px; accent-color: var(--accent); }
   .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .error { color: var(--s-failed); margin: 0; min-height: 1em; font-size: 13px; }
-  dialog footer { display: flex; gap: 8px; align-items: center; }
+  dialog footer { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  dialog footer .chip { min-width: 0; max-width: 100%; }
+  dialog footer .chip select { min-width: 0; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   @media (max-width: 1100px) { .pcols { grid-template-columns: minmax(0, 1fr); gap: 8px; } }
   @media (max-width: 1200px) and (min-width: 901px) {
@@ -970,7 +1103,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { ap
     .composer .hint { display: none; }
     .two { grid-template-columns: 1fr; }
   }
-  @media (prefers-reduced-motion: reduce) { .si.s-working, .working .star svg { animation: none; } .side { transition: none; } }
+  @media (prefers-reduced-motion: reduce) { .si.s-working, .working .star svg, .av.drawing { animation: none; } .side { transition: none; } }
 </style>
 </head>
 <body>
@@ -981,6 +1114,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { ap
     <nav class="nav">
       <a href="#/" data-view="home" data-new><span data-icon="chat"></span>New chat</a>
       <a href="#/inbox" data-view="inbox"><span data-icon="inbox"></span><span class="grow">Inbox</span><span id="navInbox"></span></a>
+      <a href="#/live" data-view="live"><span data-icon="pulse"></span><span class="grow">Live</span><span id="navLive"></span></a>
       <a href="#/tasks" data-view="tasks"><span data-icon="list"></span>Tasks</a>
       <a href="#/scheduled" data-view="scheduled"><span data-icon="clock"></span>Scheduled</a>
       <a href="#/team" data-view="team"><span data-icon="org"></span>Team</a>
@@ -1086,13 +1220,13 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { ap
 <dialog id="picDialog">
   <div class="dbody">
     <h2 id="picHead">Profile picture</h2>
-    <p class="hint" style="margin:-4px 0 0">Claude draws it in the style you pick. With Sonnet each one takes about 15 seconds and a few cents of your plan; Opus and Fable take a minute or two and cost more.</p>
+    <p class="hint" style="margin:-4px 0 0">Your AI draws it in the style you pick. A light model takes about 15 seconds; the strongest ones take a minute or two and use more of your plan.</p>
     <div class="picstyles" id="picStyles"></div>
     <label>How they look <small>Optional: hair, glasses, clothes, colours, something they hold…</small>
       <input id="picDetails" maxlength="300" autocomplete="off" placeholder="e.g. short curly hair, round glasses, green hoodie"></label>
     <div class="picrow"><figure><div id="picNow"></div>Now</figure><figure><div class="picnew" id="picNew"></div><span id="picNewCap">New</span></figure></div>
     <p class="error" id="picErr"></p>
-    <footer><button type="button" class="btn ghost" id="picRemove">Remove picture</button>
+    <footer><button type="button" class="btn ghost" id="picRemove" title="Remove their picture">Remove</button>
       <label class="chip" title="Who draws it"><span data-icon="cpu"></span><select id="picModel" aria-label="Model"></select><span data-icon="chev"></span></label><span class="grow"></span>
       <button type="button" class="btn" data-close>Close</button><button type="button" class="btn" id="picUse" hidden>Use this</button><button type="button" class="btn primary" id="picGo">Generate</button></footer>
   </div>
@@ -1109,6 +1243,43 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { ap
     <p class="error" id="skillErr"></p>
     <footer><button type="button" class="btn danger" id="skillDel">Delete</button><span class="grow"></span><button type="button" class="btn" data-close>Cancel</button><button class="btn primary">Save skill</button></footer>
   </form>
+</dialog>
+
+<dialog id="exportDialog">
+  <div class="dbody">
+    <h2 id="exHead">Export</h2>
+    <p class="hint">One file a friend can import into their own Orbit (Settings → Team → Import). Jobs, personalities and rules always go in. Chats and work stay with you.</p>
+    <div class="bklist" id="exList"></div>
+    <footer><span class="grow"></span><button type="button" class="btn" data-close>Cancel</button><button type="button" class="btn primary" id="exGo">Download</button></footer>
+  </div>
+</dialog>
+
+<dialog id="backupDialog">
+  <div class="dbody">
+    <h2>Download a backup</h2>
+    <p class="hint">Pick what goes in. Your team, chats, tasks, projects and settings always do.</p>
+    <div class="bklist" id="bkList"></div>
+    <footer><span class="hint" id="bkSize"></span><span class="grow"></span><button type="button" class="btn" data-close>Cancel</button><button type="button" class="btn primary" id="bkGo">Download</button></footer>
+  </div>
+</dialog>
+
+<dialog id="hireDialog">
+  <div class="dbody">
+    <div class="hhead"><h2>Hire with help</h2><span class="hint" id="hStep"></span></div>
+    <div id="hBody"></div>
+    <p class="error" id="hErr"></p>
+    <footer id="hFoot"></footer>
+  </div>
+</dialog>
+
+<dialog id="skAssignDialog">
+  <div class="dbody">
+    <h2>Who needs these skills?</h2>
+    <p class="hint" id="skaHint"></p>
+    <div class="skalist" id="skaList"></div>
+    <p class="error" id="skaErr"></p>
+    <footer><span class="grow"></span><button type="button" class="btn" data-close>Not now</button><button type="button" class="btn primary" id="skaGo">Assign</button></footer>
+  </div>
 </dialog>
 
 <dialog id="fontDialog">
@@ -1261,6 +1432,8 @@ const ICONS = {
   archive: '<rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
   restore: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
   pen: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+  pulse: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+  github: '<path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/>',
   spark: '<path d="M12 3l1.8 5.4L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.6z"/><path d="M19 15l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/>',
   cpu: '<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/>',
   notes: '<path d="M13.4 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7.4"/><path d="M2 6h4M2 10h4M2 14h4M2 18h4"/><path d="M21.4 5.6a1 1 0 0 0-3-3l-5 5a2 2 0 0 0-.5.86l-.84 2.87a.5.5 0 0 0 .62.62l2.87-.84a2 2 0 0 0 .86-.5z"/>',
@@ -1286,9 +1459,13 @@ const MODEL_LONG = { sonnet: 'Sonnet (balanced)', opus: 'Opus (very capable)', f
 const EFFORT = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra', max: 'Max' };
 const EFFORT_LONG = { low: 'Low (fastest)', medium: 'Medium', high: 'High', xhigh: 'Extra high', max: 'Max (most thorough, slowest)' };
 // "claude-opus-5-5" → "Opus 5.5", "claude-haiku-4-5-20251001" → "Haiku 4.5"
-const modelName = (id) => { const m = String(id ?? '').match(/^claude-([a-z]+)-(\d+)(?:-(\d{1,2})(?!\d))?/); return m ? `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}${m[3] ? '.' + m[3] : ''}` : String(id ?? ''); };
+const modelName = (id) => { const m = String(id ?? '').match(/^claude-([a-z]+)-(\d+)(?:-(\d{1,2})(?!\d))?/); return m ? `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}${m[3] ? '.' + m[3] : ''}`
+  : state.models?.find((x) => x.value.endsWith(`:${id}`))?.label ?? String(id ?? ''); }; // other engines: their own name for it
+const ENGINE_NAME = { claude: 'Claude', gpt: 'ChatGPT', gemini: 'Gemini', grok: 'Grok' };
+// A model as people say it: "Sonnet", "Auto", "Gemini 3.1 Pro (High)"
+const modelLabel = (v) => (!v || v === 'auto' || v === 'default' ? 'Auto' : MODEL[v] ?? state.models?.find((m) => m.value === v)?.label ?? String(v).split(':').pop());
 const effortWord = (x) => ({ standard: 'Standard', xhigh: 'Extra high' })[x] ?? EFFORT[x] ?? 'Standard';
-const stamp = (m) => (m?.model ? `${modelName(m.model)} · ${effortWord(m.effort)} effort` : '');
+const stamp = (m) => (m?.model ? `${modelName(m.model)}${/^gemini-/.test(m.model) ? '' : ` · ${effortWord(m.effort)} effort`}` : ''); // Gemini's models carry their own effort
 const ext = (name) => (name.includes('.') ? name.split('.').pop().toLowerCase() : '');
 const KINDS = { html: 'Web page', htm: 'Web page', md: 'Markdown', txt: 'Text', doc: 'Document', docx: 'Document', pdf: 'PDF', xlsx: 'Spreadsheet', xls: 'Spreadsheet', csv: 'Spreadsheet',
   pptx: 'Slides', key: 'Slides', png: 'Image', jpg: 'Image', jpeg: 'Image', gif: 'Image', webp: 'Image', svg: 'Image', zip: 'Archive', json: 'Data', mp4: 'Video', mov: 'Video' };
@@ -1316,7 +1493,7 @@ const nextText = (iso) => {
 };
 
 let state = { employees: [], projects: [], tasks: [], schedules: [], settings: { default_model: 'sonnet', default_effort: '', owner_name: '' }, perms: {} };
-let view = { name: 'home' }, editingSched = null, editingProj = null, mounted = '';
+let view = { name: 'home' }, editingSched = null, editingProj = null, mounted = '', interruptNext = false; // interruptNext: the next send stops the current turn
 let lastWho = null, homeProject = null, lastModel = '', lastEffort = '', filterWho = '', filterProj = '', msgText = new Map();
 let edDirty = false; // the person editor has changes you haven't saved
 let jobOpen = false; // a person's full job description, opened with "Show more"
@@ -1352,7 +1529,7 @@ const ownerAv = (size) => { // your photo or drawn picture; the Orbit logo until
 const av = (name, size) => { // size: true (large) or 'xl'
   const cls = `av ${size === 'xl' ? 'xl' : size ? 'lg' : ''}`, e = state.employees.find((x) => x.name === name) ?? state.archive?.employees.find((x) => x.name === name);
   return e?.avatar ? `<img class="${cls} pic" src="/avatars/${e.id}.svg?v=${e.avatar}" alt="">`
-    : `<span class="${cls}" style="background:hsl(${hue(name)} 38% 44%)">${esc(name[0].toUpperCase())}</span>`;
+    : `<span class="${cls}${e?.drawing ? ' drawing' : ''}" style="background:hsl(${hue(name)} 38% 44%)" ${e?.drawing ? 'title="Drawing their picture…"' : ''}>${esc(name[0].toUpperCase())}</span>`;
 };
 const pdot = (p) => `<span class="pdot" style="background:hsl(${hue(p.name)} 55% 55%)"></span>`;
 const si = (s) => `<span class="si s-${s}" title="${LABEL[s]}"></span>`;
@@ -1362,11 +1539,17 @@ const tasksOnly = () => state.tasks.filter((t) => t.kind === 'task');
 const needsYou = (t) => (t.kind === 'task' && ['review', 'failed', 'stopped'].includes(t.status)) || (t.kind === 'chat' && t.status === 'failed');
 const options = (list, value, empty) => (empty ? `<option value="">${empty}</option>` : '') +
   list.map((x) => `<option value="${x.id}" ${x.id === value ? 'selected' : ''}>${esc(x.name)}</option>`).join('');
-const personModel = (e) => (MODEL[e?.model] ? e.model : state.settings.default_model);
-const modelChoices = (value, fallback) => `<option value="">${MODEL[fallback]} (default)</option>` +
-  Object.keys(MODEL).map((m) => `<option value="${m}" ${m === value ? 'selected' : ''}>${MODEL[m]}</option>`).join('');
+// People with their picture and title. Chrome draws these as a picture menu (appearance: base-select); other browsers list the names.
+const PICK = '<button type="button"><selectedcontent></selectedcontent></button>'; // a menu's closed face: the chosen option, minus its extras
+const peopleOptions = (list, value, head = '') => PICK + head +
+  list.map((x) => `<option value="${x.id}" ${x.id === value ? 'selected' : ''}>${av(x.name)}<span class="who"><b>${esc(x.name)}</b>${x.title ? `<small>${esc(x.title)}</small>` : ''}</span></option>`).join('');
+const personModel = (e) => (e?.model && e.model !== 'default' ? e.model : state.settings.default_model || 'auto');
+// Every model you can use: Claude's, then the engines switched on in Settings → Connectors (claudeOnly: for pictures, which Claude draws).
+const modelOptions = (value, onlyEngine) => (state.models ?? Object.entries(MODEL).map(([v, label]) => ({ value: v, label, engine: 'claude' }))).filter((m) => !onlyEngine || m.engine === onlyEngine)
+  .map((m) => `<option value="${m.value}" ${m.value === value ? 'selected' : ''}>${esc(m.label)}</option>`).join(''); // their names say which AI (GPT-6-Luna, Gemini 3.8 Flash)
+const modelChoices = (value, fallback, onlyEngine) => `${PICK}<option value="">${modelLabel(fallback)}<small> (${!fallback || fallback === 'auto' ? 'picks for each chat' : 'default'})</small></option>` + modelOptions(value, onlyEngine);
 const personEffort = (e) => (EFFORT[e?.effort] ? e.effort : state.settings.default_effort);
-const effortChoices = (value, fallback) => `<option value="">${fallback ? EFFORT[fallback] : 'Standard'} (default)</option>` +
+const effortChoices = (value, fallback) => `${PICK}<option value="">${fallback ? EFFORT[fallback] : 'Standard'}<small> (default)</small></option>` +
   Object.keys(EFFORT).map((x) => `<option value="${x}" ${x === value ? 'selected' : ''}>${EFFORT[x]}</option>`).join('');
 const bossName = (e) => (e?.reports_to && emp(e.reports_to) ? emp(e.reports_to).name : 'you');
 const createdBy = (t) => (t.created_by === 'me' ? 'You' : t.created_by === 'schedule' ? 'A schedule' : t.created_by);
@@ -1383,6 +1566,8 @@ const showError = (err) => alert(err.message);
 function renderSide() {
   const waiting = inbox().length;
   setHTML($('#navInbox'), waiting ? `<span class="badge">${waiting}</span>` : '');
+  const live = state.tasks.filter((t) => t.status === 'working').length;
+  setHTML($('#navLive'), live ? `<span class="live" title="${live} working now">${live}</span>` : '');
   document.querySelectorAll('.nav a').forEach((a) => a.classList.toggle('on', a.dataset.view === view.name));
   setHTML($('#sideProjects'), state.projects.map((p) => {
     const open = tasksOnly().filter((t) => t.project_id === p.id && t.status !== 'done').length;
@@ -1436,19 +1621,20 @@ function groupsHTML(list, compact) { // compact: leave out empty groups
 const VIEWS = {
   home: () => `<div class="home">
     <h1 class="greet"><span class="star">${ORBIT}</span><span id="greetText">What shall we work on?</span></h1>
-    <div class="cta" id="homeHire" hidden>Your team is empty. Hire your first employee: give them a name and a role.<br>
-      <a class="btn primary" href="#/settings/team/new">${icon('userplus')} Hire someone</a></div>
+    <div class="cta" id="homeHire" hidden><b>Welcome to Orbit</b>
+      <p>Start by hiring your first teammate. They become your main assistant: you talk to them first, and they run the team for you.</p>
+      <div class="ctabtns"><button type="button" class="btn primary" data-hirehelp>${icon('spark')} Hire with help</button><a class="btn" href="#/settings/team/new">${icon('userplus')} Set one up yourself</a></div></div>
     <form id="newForm" hidden>
       <div class="composer"><div class="attachrow" hidden></div>
         <textarea name="message" rows="2" placeholder="Start a chat: ask, plan, or have them put work on the board…" aria-label="Message"></textarea>
         <div class="bar">${plusBits()}<span class="grow"></span>
+          <label class="chip" title="Model">${icon('cpu')}<select name="model" id="newModel" aria-label="Model"></select>${icon('chev')}</label>
+          <label class="chip soft" title="Effort: how hard they think">${icon('gauge')}<select name="effort" id="newEffort" aria-label="Effort"></select>${icon('chev')}</label>
           <button class="send" aria-label="Start chat" title="Send (Enter)">${icon('up')}</button></div>${pointBits()}
       </div>
       <div class="under">
-        <label class="chip" title="Who to chat with">${icon('user')}<select name="employee_id" id="newWho" aria-label="Who"></select>${icon('chev')}</label>
+        <label class="chip" title="Who to chat with"><span id="newWhoPic">${icon('user')}</span><select name="employee_id" id="newWho" aria-label="Who"></select>${icon('chev')}</label>
         <label class="chip" title="Project">${icon('box')}<select name="project_id" id="newProj" aria-label="Project"></select>${icon('chev')}</label>
-        <label class="chip" title="Model">${icon('cpu')}<select name="model" id="newModel" aria-label="Model"></select>${icon('chev')}</label>
-        <label class="chip" title="Effort: how hard they think">${icon('gauge')}<select name="effort" id="newEffort" aria-label="Effort"></select>${icon('chev')}</label>
         <button type="button" class="chip" data-browse="newFolder" id="newFolderBtn">${icon('folder')}<span id="newFolderName"></span>${icon('chev')}</button><input type="hidden" name="folder" id="newFolder">
       </div>
     </form>
@@ -1473,6 +1659,9 @@ const VIEWS = {
       <p class="hint">What the team has learned about this project. It's written by them, for them; read it to catch anything they've misunderstood.</p>
       <div class="body" id="pMemory"></div></details></section></div>
   </div>`,
+  live: () => `<div class="slist"><div class="page-head"><h2>Live</h2></div>
+    <p class="intro">What your team is doing right now. It updates by itself.</p>
+    <div class="ltiles" id="liveTiles"></div><div id="liveBody"></div></div>`,
   inbox: () => `<div class="slist"><div class="page-head"><h2>Inbox</h2></div>
     <p class="intro">Everything waiting on you: requests for your OK, finished work to check, and anything that went wrong. Click one for the details and what to do.</p>
     <div id="inboxList"></div></div>`,
@@ -1491,12 +1680,12 @@ const VIEWS = {
       <div class="composer"><div class="attachrow" hidden></div>
         <textarea name="message" rows="2" aria-label="Message"></textarea>
         <div class="bar">${plusBits()}<span class="grow"></span>
+          <label class="chip" title="Model">${icon('cpu')}<select name="model" id="newModel" aria-label="Model"></select>${icon('chev')}</label>
+          <label class="chip soft" title="Effort: how hard they think">${icon('gauge')}<select name="effort" id="newEffort" aria-label="Effort"></select>${icon('chev')}</label>
           <button class="send" aria-label="Start chat" title="Send (Enter)">${icon('up')}</button></div>${pointBits()}
       </div>
       <div class="under">
         <label class="chip" title="Project">${icon('box')}<select name="project_id" id="newProj" aria-label="Project"></select>${icon('chev')}</label>
-        <label class="chip" title="Model">${icon('cpu')}<select name="model" id="newModel" aria-label="Model"></select>${icon('chev')}</label>
-        <label class="chip" title="Effort: how hard they think">${icon('gauge')}<select name="effort" id="newEffort" aria-label="Effort"></select>${icon('chev')}</label>
       </div>
     </form>
     <h3>Previous chats</h3><div id="pChats"></div>
@@ -1505,10 +1694,10 @@ const VIEWS = {
   settings: () => `<div class="settings"><nav class="snav"><h2>Settings</h2>
       <a href="#/settings" data-s="general">General</a><a href="#/settings/rules" data-s="rules">Rules</a>
       <a href="#/settings/appearance" data-s="appearance">Appearance</a>
-      <a href="#/settings/team" data-s="team">Team</a><a href="#/settings/projects" data-s="projects">Projects</a><a href="#/settings/skills" data-s="skills">Skills</a></nav>
+      <a href="#/settings/team" data-s="team">Team</a><a href="#/settings/projects" data-s="projects">Projects</a><a href="#/settings/skills" data-s="skills">Skills</a><a href="#/settings/connectors" data-s="connectors">Connectors</a></nav>
     <div id="sContent"></div></div>`,
   team: () => `<div class="page-head"><h2>Your team</h2><span class="grow"></span><span class="hint" id="orgHint" role="status"></span>
-      <button class="btn" id="orgEdit">Edit</button><a class="btn" href="#/settings/team/new">${icon('userplus')} Hire</a></div>
+      <button class="btn" id="orgEdit">Edit</button><button class="btn" data-hirehelp>${icon('spark')} Hire with help</button><a class="btn" href="#/settings/team/new">${icon('userplus')} Hire</a></div>
     <div class="teamview" id="teamview"><div class="org" id="org"><div class="orgwrap" id="orgwrap"></div></div><aside class="tdetail" id="tDetail" aria-label="Details" hidden></aside></div>`,
   task: () => `<div class="chat ${panelOpen ? 'panel-open' : ''}" id="chat" style="--vw:${viewerWidth}px">
     <div class="crumbs">
@@ -1528,10 +1717,11 @@ const VIEWS = {
         <textarea id="cMsg" name="text" rows="1" aria-label="Message"></textarea>
         <div class="bar">${plusBits()}<span class="grow"></span>
           <label class="chip" title="Model for this conversation">${icon('cpu')}<select id="cModel" aria-label="Model"></select>${icon('chev')}</label>
-          <label class="chip" title="Effort for this conversation: how hard they think">${icon('gauge')}<select id="cEffort" aria-label="Effort"></select>${icon('chev')}</label>
+          <label class="chip soft" title="Effort for this conversation: how hard they think">${icon('gauge')}<select id="cEffort" aria-label="Effort"></select>${icon('chev')}</label>
+          <button type="button" class="ibtn" id="cInterrupt" hidden title="Stop what they're doing and send this now (⌘↩)">Interrupt</button>
           <button class="send" id="cSend" aria-label="Send" title="Send (Enter)">${icon('up')}</button></div>${pointBits()}
       </form>
-      <div class="disclaimer">Your team runs on Claude and can make mistakes. Check their work before you mark it done.</div>
+      <div class="disclaimer">Your team runs on AI and can make mistakes. Check their work before you mark it done.</div>
     </div>
     <div class="viewer-float"><div class="vgrip" data-grip tabindex="0" role="separator" aria-orientation="vertical" aria-label="Resize the viewer" title="Drag to resize"></div>
       <div id="viewer" role="region" aria-label="Viewer"></div></div>
@@ -1552,9 +1742,10 @@ function renderHome() {
   $('#newForm').hidden = !has;
   const who = $('#newWho'), pr = $('#newProj');
   const first = emp(lastWho) ? lastWho : emp(state.settings.main_assistant) ? state.settings.main_assistant : state.employees[0]?.id;
-  if (setHTML(who, options(state.employees, first))) who.value = first ?? '';
+  if (setHTML(who, peopleOptions(state.employees, first))) who.value = first ?? '';
   if (setHTML(pr, options(state.projects, homeProject, 'No project'))) pr.value = homeProject ?? '';
   const e = emp(Number(who.value)), p = proj(Number(pr.value));
+  setHTML($('#newWhoPic'), e ? av(e.name) : icon('user')); // their picture, or their letter
   if (setHTML($('#newModel'), modelChoices(lastModel, personModel(e)))) $('#newModel').value = lastModel;
   if (setHTML($('#newEffort'), effortChoices(lastEffort, personEffort(e)))) $('#newEffort').value = lastEffort;
   $('#newForm textarea').placeholder = e ? `Ask ${e.name} anything${e.id === state.settings.main_assistant ? '; the team gets pulled in when needed' : ''}…` : '';
@@ -1572,7 +1763,7 @@ function renderHome() {
 
 function renderTasks() {
   const w = $('#filterWho'), p = $('#filterProj');
-  if (setHTML(w, '<option value="">Everyone</option><option value="0">Unassigned</option>' + options(state.employees))) w.value = filterWho;
+  if (setHTML(w, peopleOptions(state.employees, null, '<option value="">Everyone</option><option value="0">Unassigned</option>'))) w.value = filterWho;
   if (setHTML(p, options(state.projects, null, 'All projects'))) p.value = filterProj;
   setHTML($('#groups'), groupsHTML(tasksOnly().filter((t) => (filterWho === '' || t.employee_id === Number(filterWho)) && (!filterProj || t.project_id === Number(filterProj)))));
 }
@@ -1613,7 +1804,7 @@ function renderPerson() {
   const reports = state.employees.filter((x) => x.reports_to === e.id);
   setHTML($('#pHead'), `<button class="avbtn" data-pic="${e.id}" title="Change profile picture" aria-label="Change ${esc(e.name)}'s profile picture">${av(e.name, 'xl')}<span class="avedit">${icon('image')}</span></button><div class="grow"><h2>${esc(e.name)}</h2><div class="sub">${e.id === state.settings.main_assistant ? 'Your main assistant · ' : ''}${esc(e.title || 'No title yet')}</div></div>
     ${e.archived_at ? `<span class="pill">Archived</span><button class="btn small" data-restore="employee:${e.id}">${icon('restore')} Restore</button>` : ''}
-    <a class="btn ghost" href="#/settings/team/${e.id}">${icon('gear')} Profile &amp; rules</a>`);
+    <a class="btn ghost" href="#/settings/team/${e.id}">${icon('gear')} Profile &amp; rules</a><button type="button" class="btn ghost" data-exportperson="${e.id}" title="A copy of ${esc(e.name)} for a friend's Orbit">${icon('file')} Export</button>`);
   const job = $('#pJob'), more = $('#pJobMore');
   if (job.textContent !== e.role) job.textContent = e.role;
   job.classList.toggle('clamp', !jobOpen);
@@ -1626,7 +1817,7 @@ function renderPerson() {
       : `<div class="pperson">${ownerAv(true)}<span class="who"><b>${esc(state.settings.owner_name || 'You')}</b><small>You, the owner</small></span></div>`}</section>
     <section class="pcard"><h4>Manages <span class="n">${reports.length || ''}</span></h4>${reports.map(person).join('') || `<p class="hint">Nobody yet. Pick ${esc(e.name)} as someone's boss in Settings → Team.</p>`}</section>
     <section class="pcard"><h4>How they work</h4>
-      <div class="kv"><span>Model</span><span>${MODEL[personModel(e)]}</span></div>
+      <div class="kv"><span>Model</span><span>${esc(modelLabel(personModel(e)))}</span></div>
       <div class="kv"><span>Effort</span><span>${EFFORT[personEffort(e)] || 'Standard'}</span></div>
       <div class="kv"><span>Files</span><span>${ACCESS[e.access]}</span></div>
       <div class="kv"><span>Open tasks</span><span>${tasksOnly().filter((t) => t.employee_id === e.id && t.status !== 'done').length}</span></div></section>`);
@@ -1648,24 +1839,23 @@ const generalHTML = (st) => `<form class="sform" id="generalForm">
       <div class="who"><label>Your name <small>Your team calls you this. It also shows at the bottom of the sidebar.</small>
           <input name="owner_name" maxlength="40" autocomplete="off" placeholder="e.g. Sam" value="${esc(st.owner_name)}"></label>
         <div class="mebtns"><label class="btn small">${icon('image')} Upload a photo<input type="file" id="mePhoto" accept="image/*" hidden></label>
-          <button type="button" class="btn small" data-pic="me">Draw one with Claude</button>
+          <button type="button" class="btn small" data-pic="me">Draw one</button>
           ${state.settings.owner_avatar ? '<button type="button" class="btn ghost small" id="meRemove">Remove picture</button>' : ''}</div></div></div></div>
   <div class="scard"><h3>Your team</h3><p>Defaults for everyone. Each person, and each chat, can still use something else.</p>
     <div class="setrow"><div><b>Main assistant</b><small>New chats start with them, and they run the team for you.</small></div>
-      <select name="main_assistant" aria-label="Main assistant"><option value="">Nobody</option>
-        ${state.employees.map((e) => `<option value="${e.id}" ${e.id === Number(st.main_assistant) ? 'selected' : ''}>${esc(e.name)}${e.title ? ' · ' + esc(e.title) : ''}</option>`).join('')}</select></div>
-    <div class="setrow"><div><b>Model</b><small>For everyone set to "Default". Each reply shows the exact version, like Opus 5.5.</small></div>
-      <select name="default_model" aria-label="Default model">${Object.keys(MODEL).map((m) => `<option value="${m}" ${m === st.default_model ? 'selected' : ''}>${MODEL_LONG[m]}</option>`).join('')}</select></div>
+      <select name="main_assistant" aria-label="Main assistant">${peopleOptions(state.employees, Number(st.main_assistant), '<option value="">Nobody</option>')}</select></div>
+    <div class="setrow"><div><b>Backup model</b><small>People on Auto get the best model for each chat or task. If Auto can't decide, they use this one. Each reply shows the exact version, like Opus 5.5.</small></div>
+      <select name="default_model" aria-label="Default model">${PICK}${modelOptions(st.default_model)}</select></div>
     <div class="setrow"><div><b>Effort</b><small>More effort is better on hard problems, but slower and uses more of your plan.</small></div>
-      <select name="default_effort" aria-label="Default effort"><option value="" ${st.default_effort ? '' : 'selected'}>Standard (Claude's own default)</option>
+      <select name="default_effort" aria-label="Default effort"><option value="" ${st.default_effort ? '' : 'selected'}>Standard (the model's own default)</option>
         ${Object.keys(EFFORT).map((x) => `<option value="${x}" ${x === st.default_effort ? 'selected' : ''}>${EFFORT_LONG[x]}</option>`).join('')}</select></div>
     <p class="hint" id="formState" role="status" style="margin:0;min-height:1em"></p></div></form>
   <div class="scard" style="margin-top:18px"><h3>Your data</h3>
     <p>Everything Orbit knows is kept in one folder, apart from the app: your team and each person's preferences, rules, notes and pictures, your profile and settings, chats, projects, uploads and skills. Updating or removing the app never touches it.</p>
     <div class="kv"><span>Your data</span><span>${esc(st.data_dir)}</span></div><div class="kv"><span>The app</span><span>${esc(st.code_dir)}</span></div>
     <div class="mebtns" style="margin-top:10px"><button type="button" class="btn small" id="backupBtn">${icon('archive')} Download a backup</button><button type="button" class="btn small ghost" data-opendata>${icon('folder')} Show the folder</button></div>
-    <p class="hint" style="margin:8px 0 0">A backup is one file with all of it. To use it again (on this computer or another), run the Orbit installer: it asks if you have a backup, and you drag the file in.</p>
-    <p class="hint" style="margin:6px 0 0">Orbit runs only on this computer, on your Claude Code login, and starts by itself when you log in.</p></div>`;
+    <p class="hint" style="margin:8px 0 0">A backup is one file with what you pick. To use it again (on this computer or another), run the Orbit installer: it asks if you have a backup, and you drag the file in.</p>
+    <p class="hint" style="margin:6px 0 0">Orbit runs only on this computer, on your own AI logins, and starts by itself when you log in.</p></div>`;
 // Rules: the shared rules on the left, everyone's own rules (on their profiles) in a list on the right.
 const rulesHTML = (st) => `<div class="rulesgrid"><form class="sform" id="rulesForm">
   <div class="scard"><h3>Global rules</h3><p>Everyone follows these, always. They override everything else.</p>
@@ -1687,12 +1877,18 @@ const teamListHTML = () => {
       <div class="tc-top">${av(e.name, true)}<div class="who"><b>${esc(e.name)}${liveNow(e) ? '<span class="live">live</span>' : ''}</b><small>${esc(e.title || 'No title yet')}</small></div>
         ${e.id === main ? '<span class="tc-badge">Main</span>' : ''}${e.hidden ? `<span class="tc-flag" title="Hidden from your sidebar">${icon('eyeoff')}</span>` : ''}</div>
       <div class="tc-boss"><span>Reports to</span>${boss ? av(boss.name) : ownerAv()}<b>${esc(boss ? boss.name : 'You')}</b></div>
-      <div class="tc-tags"><span class="tag" title="Model${MODEL[e.model] ? '' : ', following your default'}">${icon('cpu')}${MODEL[personModel(e)]}${MODEL[e.model] ? '' : '<i>default</i>'}</span>
+      <div class="tc-tags"><span class="tag" title="${personModel(e) === 'auto' ? 'Model: Orbit picks one for each chat or task' : 'Model'}">${icon('cpu')}${esc(modelLabel(personModel(e)))}${personModel(e) !== 'auto' && !MODEL[personModel(e)] ? `<i>${ENGINE_NAME[personModel(e).split(':')[0]] ?? ''}</i>` : ''}</span>
         <span class="tag" title="Effort${EFFORT[e.effort] ? '' : ', following your default'}">${icon('gauge')}${EFFORT[personEffort(e)] || 'Standard'}${EFFORT[e.effort] ? '' : '<i>default</i>'}</span>
         <span class="tag ${e.access === 'full' ? 'risky' : ''}" title="File access">${icon(accessIcon[e.access] ?? 'eye')}${ACCESS[e.access]}</span></div></a>`;
   };
   return `<div class="scard"><div class="tl-head"><div><h3>Team</h3><p>${people.length} ${people.length === 1 ? 'person' : 'people'}. Click someone to change their profile, boss, rules, model and permissions.</p></div>
-      <a class="btn primary small" href="#/settings/team/new">${icon('userplus')} Hire someone</a></div>
+      <span class="tl-btns"><label class="btn small" title="Add a teammate or a whole team someone exported from their Orbit">${icon('file')} Import<input type="file" id="personImport" accept=".json,application/json" hidden></label>
+      <button type="button" class="btn small" data-exportteam title="Everyone on your team, with who reports to whom, as one file">${icon('file')} Export the team</button>
+      ${(() => { const missing = people.filter((e) => !e.avatar).length, busy = people.filter((e) => e.drawing).length;
+        return busy ? `<button class="btn small" disabled>${icon('image')} Drawing ${busy} picture${busy === 1 ? '' : 's'}…</button>`
+          : missing ? `<button class="btn small" data-drawmissing title="Your main AI draws each of them from their details, in the style you used last">${icon('image')} Draw ${missing} missing picture${missing === 1 ? '' : 's'}</button>` : ''; })()}
+      <button class="btn small" data-hirehelp title="Orbit's hiring assistant asks you a few rounds of questions, proposes people, and you choose who to hire">${icon('spark')} Hire with help</button>
+      <a class="btn primary small" href="#/settings/team/new">${icon('userplus')} Hire someone</a></span></div>
     <div class="tgrid">${people.map(card).join('') || '<p class="empty">No one yet.</p>'}</div></div>`;
 };
 // Settings → Projects: each project as a card with what's going on in it and who works on it.
@@ -1797,9 +1993,8 @@ function editorHTML(e) {
         <textarea name="rules" rows="3" placeholder="Always list sources at the end. Never guess numbers."></textarea></label></div>
 
     <div class="scard"><h3>How they work</h3>
-      <div class="setrow"><div><b>Model</b><small>"Default" follows General settings.</small></div>
-        <select name="model" aria-label="Model"><option value="default">Default (${MODEL[state.settings.default_model]})</option>
-          ${Object.keys(MODEL).map((m) => `<option value="${m}">${MODEL_LONG[m]}</option>`).join('')}</select></div>
+      <div class="setrow"><div><b>Model</b><small>Auto picks the best model for each chat or task. Pick one to always use it; you can still change it in any chat.</small></div>
+        <select name="model" aria-label="Model">${PICK}<option value="auto">Auto<small> · picks for each chat</small></option>${modelOptions('')}</select></div>
       <div class="setrow"><div><b>Effort</b><small>How hard they think before answering.</small></div>
         <select name="effort" aria-label="Effort"><option value="default">Default (${EFFORT[state.settings.default_effort] || 'Standard'})</option>
           ${Object.keys(EFFORT).map((x) => `<option value="${x}">${EFFORT_LONG[x]}</option>`).join('')}</select></div>
@@ -1818,14 +2013,14 @@ function editorHTML(e) {
         ${e.allow.dirs.map((d) => `<label class="switchrow"><span class="grow"><b>Edit files in ${esc(shortPath(d))}</b><small>${esc(d)}</small></span><input type="checkbox" class="switch" name="allow_dir" value="${esc(d)}" checked></label>`).join('')}
         <small class="hint">Switch one off to be asked again.</small></div>` : ''}</div>
 
-    <div class="scard"><h3>Skills</h3><p>Ways of working you give them. Everyone also has Claude Code's built-in skills.</p>
+    <div class="scard"><h3>Skills</h3><p>Ways of working you give them. Teammates on Claude also have Claude Code's built-in skills.</p>
       <div class="edskills" id="edSkills"></div>
       <div><button type="button" class="btn small" data-skadd>${icon('plus')} Add skills</button> <a class="hint" href="#/settings/skills">Manage skills</a></div>
       <div class="skpicker" id="skPicker" hidden><input class="skq" id="skPickQ" autocomplete="off" placeholder="Search skills…" aria-label="Search skills"><div class="sklist" id="skPickList"></div></div></div>
     ${e ? `<div class="scard"><h3>Notes</h3><p>Their own long-term memory, read at the start of every chat and task. They add to it as they learn.</p>
       <textarea name="notes" class="mono" rows="8" disabled placeholder="Nothing yet."></textarea></div>` : ''}
 
-    <footer class="savebar"><p class="error" id="empErr"></p>${e ? `<button type="button" class="btn danger" id="fireBtn">Let go</button><button type="button" class="btn ghost" ${e.archived_at ? `data-restore="employee:${e.id}">${icon('restore')} Restore` : `data-archive="employee:${e.id}">${icon('archive')} Archive`}</button>` : ''}<span class="grow"></span>
+    <footer class="savebar"><p class="error" id="empErr"></p>${e ? `<button type="button" class="btn danger" id="fireBtn">Let go</button><button type="button" class="btn ghost" ${e.archived_at ? `data-restore="employee:${e.id}">${icon('restore')} Restore` : `data-archive="employee:${e.id}">${icon('archive')} Archive`}</button><button type="button" class="btn ghost" data-exportperson="${e.id}">${icon('file')} Export</button>` : ''}<span class="grow"></span>
       <a class="btn" href="#/settings/team">Cancel</a><button class="btn primary">${e ? 'Save changes' : 'Hire'}</button></footer>
   </form></div>`;
 }
@@ -1921,12 +2116,46 @@ async function uploadLook(file) {
   } catch (err) { $('#lookErr').textContent = err.message.includes('decode') || err.name === 'InvalidStateError' ? 'Couldn\'t read that picture. Try a JPG or PNG.' : err.message; }
 }
 
+// Settings → Connectors: the AIs your team runs on. Each runs through its own app on this computer, signed in with your own account.
+// One is the main AI: everyone on Auto starts there, and Orbit's own jobs (pictures, hiring, skill matching, Auto) run on it.
+let conn = null;
+async function renderConnectors(box, again) {
+  if (mounted !== 'connectors' || again) {
+    mounted = 'connectors';
+    if (!conn || again) setHTML(box, '<div class="scard"><p class="empty">Checking which AI apps are on this computer…</p></div>');
+    try { conn = await api('GET', `/api/connectors${again ? '?again=1' : ''}`); } catch (err) { return setHTML(box, `<div class="scard"><p class="error">${esc(err.message)}</p></div>`); }
+  } else if (!conn) return; // still checking
+  const mark = (ok, yes, no) => `<span class="${ok ? 'ok' : 'no'}">${ok ? '✓' : '○'} ${ok ? yes : no}</span>`;
+  const hue = { claude: 'var(--accent)', gpt: '#10a37f', gemini: '#4285f4', grok: '#111' };
+  const claude = { key: 'claude', label: 'Claude', tool: 'Claude Code', installed: conn.claude.installed, signedIn: conn.claude.installed, on: conn.claude.on, install: 'curl -fsSL https://claude.ai/install.sh | bash',
+    about: "Anthropic's Claude: every skill and tool works, and teammates can ask you for approval mid-task. Haiku, Sonnet, Opus and Fable." };
+  const card = (c) => {
+    const main = c.key === conn.main, ready = c.key === 'claude' ? c.installed : c.signedIn, on = main || (c.on && (c.key !== 'claude' || c.installed));
+    return `<div class="conn ${on ? 'on' : ''}"><div class="chead"><span class="cicon" style="background:${hue[c.key]}">${esc(c.label[0])}</span>
+      <div class="main"><b>${esc(c.label)}</b><small>${esc(c.tool)}</small></div>
+      ${main ? '<span class="pill">Main AI</span>' : c.key !== 'grok' && ready ? `<button type="button" class="btn small" data-connmain="${c.key}">Make main</button>` : ''}
+      <input type="checkbox" class="switch" data-conn="${c.key}" ${on ? 'checked' : ''} ${main ? 'disabled title="Your main AI is always on"' : c.installed && (c.signedIn || c.on) ? '' : 'disabled'} aria-label="Let my team use ${esc(c.label)}"></div>
+    <p class="about">${esc(c.about)}</p>
+    <div class="cstat">${mark(c.installed, `${esc(c.tool.split(',')[0])} is installed`, `Install it: <code>${esc(c.install)}</code>`)}
+      ${c.key === 'claude' ? '' : c.key === 'grok' ? mark(c.signedIn, 'Your xAI key works', c.hasKey ? esc(c.error || 'Your key was turned down') : 'Add your xAI API key below')
+        : mark(c.signedIn, 'Signed in', `Sign in: open Terminal and run <code>${esc(c.login)}</code>`)}
+      ${c.key === 'gemini' && on ? '<span class="no">Orbit added an "orbit" connection to Antigravity, so Gemini teammates can use Orbit\'s tools. It only works inside Orbit.</span>' : ''}</div>
+    ${c.models?.length ? `<div class="cmodels">${c.models.slice(0, 12).map((m) => `<span>${esc(m.label)}</span>`).join('')}</div>` : ''}
+    ${c.key === 'grok' ? `<form class="ckey" data-connkey="grok"><input type="password" name="key" autocomplete="off" placeholder="${c.hasKey ? 'Key saved. Paste a new one to replace it' : 'xai-…'}" aria-label="xAI API key"><button class="btn small">Save</button></form>` : ''}</div>`;
+  };
+  setHTML(box, `<div class="scard"><div class="tl-head"><div><h3>Connectors</h3><p>The AIs your team runs on. Each one runs through its own app on this computer, signed in with your own account, so it uses your plan with that company.
+      Your <b>main AI</b> is always on: Orbit's own jobs run on it (Auto's picks, pictures, the hiring assistant, skill matching). Switch others on to use their models too, in anyone's profile or any chat, or leave people on Auto and Orbit picks the best model for each chat.
+      Only Claude teammates can ask you for approval mid-task; on ChatGPT and Gemini, whatever their file access doesn't allow is simply blocked.</p></div>
+      <span class="tl-btns"><button type="button" class="btn small" data-conncheck>Check again</button></span></div>
+    <div class="conns">${[claude, ...conn.engines].map(card).join('')}</div></div>`);
+}
 async function renderSettings() {
   document.querySelectorAll('.snav a').forEach((a) => a.classList.toggle('on', a.dataset.s === (view.sub === 'edit' ? 'team' : view.sub)));
   const box = $('#sContent');
   if (view.sub === 'team') return setHTML(box, teamListHTML());
   if (view.sub === 'projects') return setHTML(box, projectsListHTML());
   if (view.sub === 'skills') return renderSkills(box);
+  if (view.sub === 'connectors') return renderConnectors(box);
   if (view.sub === 'appearance') { if (mounted !== 'appearance') { mounted = 'appearance'; setHTML(box, lookHTML()); } return; }
   const key = view.sub + (view.id ?? 'new');
   if (mounted === key) return; // forms are filled once, so a refresh never wipes what you're typing
@@ -1939,7 +2168,8 @@ async function renderSettings() {
   edSkills = [...(e?.skills ?? [])];
   loadSkills().then(renderEdSkills);
   const f = $('#empForm');
-  for (const k of ['name', 'title', 'role', 'personality', 'rules', 'folder', 'access', 'model', 'effort']) f.elements[k].value = e?.[k] ?? { access: 'read', model: 'default', effort: 'default' }[k] ?? '';
+  for (const k of ['name', 'title', 'role', 'personality', 'rules', 'folder', 'access', 'model', 'effort']) f.elements[k].value = e?.[k] ?? { access: 'read', model: 'auto', effort: 'default' }[k] ?? '';
+  if (f.elements.model.value !== (e?.model ?? 'auto')) f.elements.model.value = 'auto'; // "default" from before Auto, or an engine since switched off
   if (e) api('GET', `/api/employees/${e.id}/notes`).then(({ notes }) => { if (f.isConnected) { f.elements.notes.value = notes; f.elements.notes.disabled = false; } }).catch(showError);
 }
 
@@ -1954,7 +2184,7 @@ function renderTeam() {
     <span class="ntext"><b>${ownerName}</b><span class="r">The owner. You set the work and review the results.</span></span></div>`;
   const node = (e) => `<div class="node ${orgSel === e.id ? 'sel' : ''}" data-node="${e.id}" role="button" tabindex="0" ${orgEditing ? 'draggable="true"' : ''}>${av(e.name, true)}
     <span class="ntext"><b>${esc(e.name)}${liveNow(e) ? '<span class="live">live</span>' : ''}</b>
-      <span class="r">${esc(e.title || e.role.split('\n')[0])}</span><span class="m">${MODEL[personModel(e)]} · ${ACCESS[e.access]}</span></span></div>`;
+      <span class="r">${esc(e.title || e.role.split('\n')[0])}</span><span class="m">${esc(modelLabel(personModel(e)))} · ${ACCESS[e.access]}</span></span></div>`;
   const kids = (list) => list.length ? `<div class="stem"></div><div class="kids">${list.map((e) => `<div class="kid">${branch(e)}</div>`).join('')}</div>` : '';
   const branch = (e) => `<div class="branch">${node(e)}${kids(state.employees.filter((x) => x.reports_to === e.id))}</div>`;
   const top = state.employees.filter((e) => !e.reports_to || !emp(e.reports_to));
@@ -1986,7 +2216,7 @@ function teamDetail() {
     <p class="tdjob">${esc(e.role)}</p>
     <section><h4>Reports to</h4>${orgEditing ? bossPick : boss ? person(boss) : me}</section>
     <section><h4>Manages <span class="n">${reports.length || ''}</span></h4>${reports.map(person).join('') || '<p class="hint">Nobody yet.</p>'}</section>
-    <section><div class="kv"><span>Model</span><span>${MODEL[personModel(e)]}</span></div><div class="kv"><span>Effort</span><span>${EFFORT[personEffort(e)] || 'Standard'}</span></div>
+    <section><div class="kv"><span>Model</span><span>${esc(modelLabel(personModel(e)))}</span></div><div class="kv"><span>Effort</span><span>${EFFORT[personEffort(e)] || 'Standard'}</span></div>
       <div class="kv"><span>Files</span><span>${ACCESS[e.access]}</span></div><div class="kv"><span>Open tasks</span><span>${tasksOnly().filter((t) => t.employee_id === e.id && t.status !== 'done').length}</span></div></section>
     <footer><a class="btn primary small" href="#/person/${e.id}">${icon('chat')} Open their page</a><a class="btn small" href="#/settings/team/${e.id}">${icon('gear')} Profile &amp; rules</a></footer>`;
 }
@@ -2051,13 +2281,15 @@ const used = (a, label) => {
   const n = toolCount(a);
   return `<details class="used"><summary>${icon('chevr', 'chev')}${label || (n ? `Used ${n} tool${n > 1 ? 's' : ''}` : 'Show working')}</summary><pre class="steps">${esc(a.trim())}</pre></details>`;
 };
+// The skills a reply used, so you can see where each one came in.
+const skillsUsed = (m) => m.skills?.length ? `<div class="skused" title="Skills used for this reply">${icon('spark')}<span>Skills used</span>${m.skills.map((x) => `<span class="sk">${esc(x)}</span>`).join('')}</div>` : '';
 function message(m) {
   if (m.kind === 'teammate') {
     const [, num, title] = m.text.match(/^Finished #(\d+) "([^\n]*)":/) || [];
     const body = m.text.replace(/^Finished #\d+ "[^\n]*":\n?/, '');
     return `<div><details class="teamreply" data-reply="${m.id}" ${openReplies.has(m.id) ? 'open' : ''}><summary class="result-chip">${av(m.author)}<b>${esc(m.author)}</b>
       <span class="what">finished ${num ? `#${num} ${esc(title)}` : 'a task'}</span><span class="go"><span class="show">Show reply</span><span class="hide">Hide reply</span> ${icon('chev', 'chev')}</span></summary>
-      <div class="teambody"><div class="body">${linkTasks(md(body))}</div>
+      <div class="teambody"><div class="body">${linkTasks(md(body))}</div>${skillsUsed(m)}
         <div class="acts"><button data-copy="${m.id}" title="Copy" aria-label="Copy">${icon('copy')}</button><span>${when(m.created_at)}</span>${m.model ? `<span>· ${stamp(m)}</span>` : ''}
           ${num ? `<span class="grow"></span><a class="btn small ghost" href="#/task/${num}">Open task #${num}</a>` : ''}</div></div></details>${fileCards(m)}</div>`;
   }
@@ -2068,7 +2300,7 @@ function message(m) {
   // Like Claude's app: no header, the reply set in a serif, who wrote it underneath; the rest shows on hover.
   return `<div class="msg-reply">
     ${used(m.activity)}<div class="body">${linkTasks(md(m.text))}</div>${fileCards(m)}
-    ${m.questions ? `<div class="asked">${icon('chat')}<div><b>Asked you</b><ol>${m.questions.map((q) => `<li>${esc(q.question)}</li>`).join('')}</ol></div></div>` : ''}
+    ${m.questions ? `<div class="asked">${icon('chat')}<div><b>Asked you</b><ol>${m.questions.map((q) => `<li>${esc(q.question)}</li>`).join('')}</ol></div></div>` : ''}${skillsUsed(m)}
     <div class="acts"><span class="by">${av(m.author)}${esc(m.author)}</span><span class="more"><button data-copy="${m.id}" title="Copy" aria-label="Copy">${icon('copy')}</button>
       <span>${when(m.created_at)}</span>${m.model ? `<span title="The exact model that wrote this, and the effort it was asked for">· ${stamp(m)}</span>` : ''}</span></div></div>`;
 }
@@ -2104,6 +2336,7 @@ async function renderItem(scrollDown) {
   ca.title = ca.ariaLabel = t.archived_at ? 'Restore this chat' : 'Archive this chat';
   setHTML(ca, icon(t.archived_at ? 'restore' : 'archive'));
   $('#cStop').hidden = !['queued', 'working'].includes(t.status);
+  $('#cInterrupt').hidden = t.status !== 'working' || !t.employee_id;
 
   const wrap = $('#threadWrap'), atBottom = scrollDown || wrap.scrollHeight - wrap.scrollTop - wrap.clientHeight < 80;
   const top = isTask ? `<div class="desc"><div class="desc-head">${createdBy(t) === 'You' ? 'You created this task' : `${esc(createdBy(t))} created this task`} · ${when(t.created_at)}</div>
@@ -2130,6 +2363,7 @@ async function renderItem(scrollDown) {
   if (open && !showAsk) setHTML($('#askReopen'), `${icon('chat')} ${esc(open.author)} asked you ${open.questions.length === 1 ? 'a question' : open.questions.length + ' questions'} · <u>Answer with the options</u>`);
   const busy = ['working', 'queued', 'waiting'].includes(t.status);
   $('#cMsg').placeholder = !t.employee_id ? 'Add a note to this task…'
+    : t.status === 'working' ? `${name} is working. Send waits for this turn; Interrupt (⌘↩) sends it now.`
     : busy ? `${name} is busy. Your message reaches them when they finish this turn.`
     : t.status === 'done' ? `Message ${name} to reopen this…`
     : ['stopped', 'failed'].includes(t.status) ? `Tell ${name} what to do next, e.g. "continue"…` : `Reply to ${name}…`;
@@ -2164,10 +2398,10 @@ async function renderItem(scrollDown) {
   setHTML($('#details'), [
     isTask ? `<section><h4>Status</h4><span class="pill s-${t.status}">${LABEL[t.status]}</span></section>` : '',
     `<section><h4>${isTask ? 'Assignee' : 'Talking with'}</h4>
-      ${isTask ? `<select data-field="employee_id" aria-label="Assignee" ${t.status === 'working' ? 'disabled' : ''}>${options(state.employees, t.employee_id, 'Unassigned')}</select>` : ''}
+      ${isTask ? `<select data-field="employee_id" aria-label="Assignee" ${t.status === 'working' ? 'disabled' : ''}>${peopleOptions(state.employees, t.employee_id, '<option value="">Unassigned</option>')}</select>` : ''}
       ${e ? `<a class="item" href="#/person/${e.id}" style="margin-top:6px">${av(name)}<span class="label">${esc(name)}${e.title ? ' · ' + esc(e.title) : ''}</span>${icon('chevr')}</a>
         <div class="kv"><span>Reports to</span><span>${esc(bossName(e))}</span></div>
-        <div class="kv"><span>Model here</span><span>${MODEL[t.model || personModel(e)]}</span></div>
+        <div class="kv"><span>Model here</span><span>${esc(modelLabel(t.model || personModel(e)))}</span></div>
         <div class="kv"><span>Effort here</span><span>${EFFORT[t.effort || personEffort(e)] || 'Standard'}</span></div>
         ${(() => { const last = [...t.messages].reverse().find((m) => m.kind === 'reply' && m.model); return last ? `<div class="kv"><span>Last reply</span><span>${stamp(last)}</span></div>` : ''; })()}<div class="kv"><span>Files</span><span>${ACCESS[e.access]}</span></div>` : ''}</section>`,
     `<section><h4>Project</h4><select data-field="project_id" aria-label="Project">${options(state.projects, t.project_id, 'No project')}</select>
@@ -2184,14 +2418,14 @@ async function renderItem(scrollDown) {
   ].join(''));
 }
 
-const RENDER = { archive: renderArchive, inbox: renderInbox, home: renderHome, tasks: renderTasks, project: renderProject, scheduled: renderScheduled, team: renderTeam, task: renderItem, person: renderPerson, settings: renderSettings };
+const RENDER = { live: renderLive, archive: renderArchive, inbox: renderInbox, home: renderHome, tasks: renderTasks, project: renderProject, scheduled: renderScheduled, team: renderTeam, task: renderItem, person: renderPerson, settings: renderSettings };
 
 function route() {
   const h = location.hash.slice(1) || '/';
-  const m = h.match(/^\/(task|project|person)\/(\d+)$/), st = h.match(/^\/settings(?:\/(rules|team|projects|appearance|skills))?(?:\/(new|\d+))?$/);
+  const m = h.match(/^\/(task|project|person)\/(\d+)$/), st = h.match(/^\/settings(?:\/(rules|team|projects|appearance|skills|connectors))?(?:\/(new|\d+))?$/);
   view = m ? { name: m[1], id: Number(m[2]) }
     : st ? { name: 'settings', sub: st[2] ? 'edit' : st[1] || 'general', id: st[2] && st[2] !== 'new' ? Number(st[2]) : null }
-    : { name: { '/inbox': 'inbox', '/tasks': 'tasks', '/scheduled': 'scheduled', '/team': 'team', '/archive': 'archive' }[h] || 'home' };
+    : { name: { '/inbox': 'inbox', '/live': 'live', '/tasks': 'tasks', '/scheduled': 'scheduled', '/team': 'team', '/archive': 'archive' }[h] || 'home' };
   $('.app').classList.remove('nav-open');
   mounted = '';
   viewingFile = null;
@@ -2222,7 +2456,7 @@ function openTask({ project_id = null, parent_id = null } = {}) {
   const parent = parent_id && state.tasks.find((t) => t.id === parent_id);
   $('#taskHead').textContent = parent ? `New subtask of #${parent.id}` : 'New task';
   f.elements.parent_id.value = parent_id ?? '';
-  f.elements.employee_id.innerHTML = options(state.employees, null, 'Unassigned');
+  f.elements.employee_id.innerHTML = peopleOptions(state.employees, null, '<option value="">Unassigned</option>');
   f.elements.project_id.innerHTML = options(state.projects, project_id ?? parent?.project_id ?? null, 'No project');
   $('#taskErr').textContent = '';
   $('#taskDialog').showModal();
@@ -2251,7 +2485,7 @@ function openSchedule(x) {
   editingSched = x;
   const f = $('#schedForm');
   f.reset();
-  f.elements.employee_id.innerHTML = options(state.employees, x?.employee_id);
+  f.elements.employee_id.innerHTML = peopleOptions(state.employees, x?.employee_id);
   f.elements.project_id.innerHTML = options(state.projects, x?.project_id, 'No project');
   $('#schedHead').textContent = x ? x.title : 'New schedule';
   $('#schedDel').hidden = !x;
@@ -2286,20 +2520,25 @@ function startRename(btn) {
 
 // ---------- skills: give each person the skills they need ----------
 let skillList = null, skillQ = '', skOpen = null, edSkills = [];
-const skGroupsOpen = new Set(['Made in Orbit', 'Your Claude skills']);
+const skGroupsOpen = new Set(['Orbit core', 'Made in Orbit', 'From GitHub', 'Your Claude skills']);
 async function loadSkills(again) { if (!skillList || again) skillList = await api('GET', '/api/skills').catch(() => []); return skillList; }
 const readSkillMd = (text) => { // same as the server: frontmatter (name, description), then the instructions
   const m = String(text).replace(/\r/g, '').match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/), meta = {};
   for (const line of (m?.[1] ?? '').split('\n')) { const kv = line.match(/^([\w-]+):\s*(.*)$/); if (kv) meta[kv[1]] = kv[2].trim().replace(/^(['"])(.*)\1$/, '$2'); }
   return { name: meta.name || '', description: meta.description || '', body: (m ? m[2] : String(text)).trim() };
 };
-const skGroupOrder = (g) => (g === 'Made in Orbit' ? '0' : g === 'Your Claude skills' ? '1' : '2' + g.toLowerCase());
+const skGroupOrder = (g) => (g === 'Orbit core' ? '0' : g === 'Made in Orbit' ? '1' : g === 'From GitHub' ? '2' : g === 'Your Claude skills' ? '3' : '4' + g.toLowerCase());
 async function renderSkills(box) {
   if (mounted !== 'skills') {
     mounted = 'skills';
-    box.innerHTML = `<div class="scard"><div class="tl-head"><div><h3>Skills</h3><p>Skills teach your team how to do particular jobs well. Each person only gets the skills you give them, plus Claude Code's built-in ones.</p></div>
-        <label class="btn small">${icon('file')} Import SKILL.md<input type="file" id="skImport" accept=".md,text/markdown,text/plain" hidden></label><button class="btn primary small" data-sknew>${icon('plus')} New skill</button></div>
-      <input class="skq" id="skQ" autocomplete="off" placeholder="Search skills…" aria-label="Search skills" value="${esc(skillQ)}"><div id="skillGroups"><p class="empty">Loading skills…</p></div></div>`;
+    box.innerHTML = `<div class="scard"><div class="tl-head"><div><h3>Skills</h3><p>Skills teach your team how to do particular jobs well. Everyone has Orbit's core skills: how to hand out work, pick a model, check results and report back. Other skills go only to the people you give them to (new people get the ones that fit their job automatically).</p></div>
+        <span class="tl-btns"><button class="btn small" data-skauto title="Your main AI reads everyone's job and gives them the skills that fit. It only adds; nothing is taken away.">${icon('spark')} Assign automatically</button>
+        <button class="btn small" data-skgithub aria-expanded="false">${icon('github')} Add from GitHub</button>
+        <label class="btn small">${icon('file')} Import SKILL.md<input type="file" id="skImport" accept=".md,text/markdown,text/plain" hidden></label><button class="btn primary small" data-sknew>${icon('plus')} New skill</button></span></div>
+      <input class="skq" id="skQ" autocomplete="off" placeholder="Search skills…" aria-label="Search skills" value="${esc(skillQ)}"><form class="ghform" id="ghForm" hidden><div class="frow"><input name="url" type="url" required autocomplete="off" placeholder="https://github.com/anthropics/skills, or a folder in it" aria-label="GitHub link">
+        <button class="btn primary small">Add skills</button></div>
+        <p class="hint">Every skill under the link is copied in; adding it again updates it. Only add skills from people you trust: a skill can include scripts your team may run.</p></form>
+      <p class="sknote" id="skNote" hidden></p><div id="skillGroups"><p class="empty">Loading skills…</p></div></div>`;
     await loadSkills(true);
   }
   const q = skillQ.trim().toLowerCase(), list = (skillList ?? []).filter((x) => !q || (x.name + ' ' + x.description + ' ' + x.group).toLowerCase().includes(q))
@@ -2307,16 +2546,175 @@ async function renderSkills(box) {
   const holders = (id) => state.employees.filter((e) => e.skills?.includes(id));
   const groups = [...new Set(list.map((x) => x.group))].sort((a, b) => skGroupOrder(a).localeCompare(skGroupOrder(b)));
   const row = (x) => { const who = holders(x.id);
-    return `<div class="skrow ${skOpen === x.id ? 'open' : ''}"><span class="skicon ${x.mine ? 'mine' : ''}">${icon(x.mine ? 'pen' : 'spark')}</span>
+    if (x.core) return `<div class="skrow"><span class="skicon core">${icon('spark')}</span><div class="main"><div class="t">${esc(x.name)}</div><div class="sub">${esc(x.description)}</div></div>
+      <span class="pill" title="Part of Orbit: everyone has these and uses them to work as a team">Everyone</span></div>`;
+    return `<div class="skrow ${skOpen === x.id ? 'open' : ''}"><span class="skicon ${x.mine ? 'mine' : ''}">${icon(x.mine ? 'pen' : x.id.startsWith('github/') ? 'github' : 'spark')}</span>
       <div class="main"><div class="t">${esc(x.name)}</div><div class="sub">${esc(x.description)}</div></div>
       <span class="avstack" title="${esc(who.map((e) => e.name).join(', '))}">${who.slice(0, 4).map((e) => av(e.name)).join('')}${who.length > 4 ? `<span class="av more">+${who.length - 4}</span>` : ''}</span>
       ${x.mine ? `<button class="btn ghost small iconbtn" data-skedit="${esc(x.id)}" title="Edit" aria-label="Edit ${esc(x.name)}">${icon('pen')}</button>` : ''}
+      ${x.id.startsWith('github/') ? `<button class="btn ghost small iconbtn" data-skdel="${esc(x.id)}" title="Remove" aria-label="Remove ${esc(x.name)}">${icon('x')}</button>` : ''}
       <button class="btn small" data-skassign="${esc(x.id)}" aria-expanded="${skOpen === x.id}">${who.length ? `${who.length} ${who.length === 1 ? 'person' : 'people'}` : 'Give to…'}</button>
       ${skOpen === x.id ? `<div class="skpeople">${state.employees.map((e) => { const on = who.includes(e);
         return `<button class="skperson ${on ? 'on' : ''}" data-skperson="${e.id}" data-skid="${esc(x.id)}" aria-pressed="${on}">${av(e.name)}<span>${esc(e.name)}</span>${on ? icon('check') : icon('plus')}</button>`; }).join('')}</div>` : ''}</div>`; };
   setHTML($('#skillGroups'), groups.map((g) => { const items = list.filter((x) => x.group === g), given = items.filter((x) => holders(x.id).length).length;
     return `<details class="skgroup" data-skgroup="${esc(g)}" ${q || skGroupsOpen.has(g) || given ? 'open' : ''}><summary>${icon('chev', 'chev')}<b>${esc(g)}</b><span class="hint">${items.length} skill${items.length === 1 ? '' : 's'}${given ? ` · ${given} given` : ''}</span></summary>${items.map(row).join('')}</details>`; }).join('')
     || `<p class="empty">${q ? 'No skill matches that.' : 'No skills yet. Make one with New skill.'}</p>`);
+}
+async function addGithubSkills(f) {
+  const b = f.querySelector('button'), note = $('#skNote');
+  b.disabled = true;
+  b.textContent = 'Adding…';
+  try {
+    const { added, ids } = await api('POST', '/api/skills/github', { url: f.url.value.trim() });
+    note.innerHTML = `${icon('check')}<span>Added ${added.map((x) => `<b>${esc(x)}</b>`).join(', ')}.</span>`;
+    note.hidden = false;
+    f.reset();
+    f.hidden = true;
+    await loadSkills(true);
+    suggestAssign(ids); // who needs them: Claude suggests, you approve
+  } catch (err) { showError(err); } finally { b.disabled = false; b.textContent = 'Add skills'; await tick(); }
+}
+// New skills: Claude suggests who needs each from their jobs; you add or remove people in a popup, then they're given out.
+let skaPicks = {}, skaSkills = [], skaBusy = false; // skill id -> Set of person ids
+async function suggestAssign(ids) {
+  skaSkills = (skillList ?? []).filter((x) => ids.includes(x.id));
+  if (!skaSkills.length) return;
+  skaPicks = Object.fromEntries(skaSkills.map((x) => [x.id, new Set()]));
+  skaBusy = true;
+  $('#skaErr').textContent = '';
+  $('#skaHint').textContent = "Reading everyone's job to suggest who'd use them…";
+  renderAssign();
+  $('#skAssignDialog').showModal();
+  try {
+    for (const [id, people] of Object.entries(await api('POST', '/api/skills/suggest', { ids }))) skaPicks[id] = new Set(people);
+    $('#skaHint').textContent = 'Suggested from their jobs. Click someone to add or remove them, then assign.';
+  } catch (err) { $('#skaHint').textContent = `Couldn't suggest anyone (${err.message}). Pick people yourself.`; }
+  skaBusy = false;
+  renderAssign();
+}
+function renderAssign() {
+  $('#skaGo').disabled = skaBusy;
+  $('#skaList').innerHTML = skaSkills.map((x) => `<section class="skasec"><div class="t">${icon('github')}<b>${esc(x.name)}</b><span class="hint">${skaPicks[x.id].size ? `${skaPicks[x.id].size} ${skaPicks[x.id].size === 1 ? 'person' : 'people'}` : 'nobody yet'}</span></div>
+    <p class="sub">${esc(x.description)}</p>
+    <div class="skapeople">${state.employees.map((e) => { const on = skaPicks[x.id].has(e.id);
+      return `<button type="button" class="skperson ${on ? 'on' : ''}" data-ska="${esc(x.id)}" data-skaperson="${e.id}" aria-pressed="${on}" ${skaBusy ? 'disabled' : ''}>${av(e.name)}<span>${esc(e.name)}</span>${icon(on ? 'check' : 'plus')}</button>`; }).join('')}</div></section>`).join('');
+}
+async function applyAssign() {
+  $('#skaGo').disabled = true;
+  try { for (const [id, people] of Object.entries(skaPicks)) await api('POST', '/api/skills/assign', { id, employees: [...people] }); }
+  catch (err) { $('#skaGo').disabled = false; return ($('#skaErr').textContent = err.message); }
+  const given = skaSkills.filter((x) => skaPicks[x.id].size).map((x) => `<b>${esc(x.name)}</b> → ${[...skaPicks[x.id]].map((id) => esc(emp(id)?.name ?? '')).join(', ')}`);
+  $('#skAssignDialog').close();
+  const note = $('#skNote');
+  if (note) { note.innerHTML = `${icon('check')}<span>${given.length ? `Given out:<br>${given.join('<br>')}` : 'Added. Nobody has them yet: use <b>Give to…</b> on each skill when you want to.'}</span>`; note.hidden = false; }
+  await loadSkills(true);
+  await tick();
+}
+// Export one teammate (id) or the whole team (null) as a file for a friend: pictures and skills in by default; notes only if you tick them.
+function openExport(id) {
+  const people = id ? [emp(id)] : state.employees, byId = new Map((skillList ?? []).map((x) => [x.id, x.name]));
+  const skills = [...new Set(people.flatMap((e) => e.skills ?? []))].map((x) => byId.get(x) ?? x.split('/').pop()), pics = people.filter((e) => e.avatar).length;
+  const row = (key, label, what, on, off) => `<label class="bkrow"><input type="checkbox" data-ex="${key}" ${on ? 'checked' : ''} ${off ? 'disabled' : ''}><span><b>${label}</b><small>${what}</small></span></label>`;
+  $('#exHead').textContent = id ? `Export ${people[0].name}` : `Export your team (${people.length} ${people.length === 1 ? 'person' : 'people'})`;
+  $('#exportDialog').dataset.id = id ?? '';
+  $('#exList').innerHTML = (id ? '' : `<p class="hint" style="margin:0">Everyone on your team (not the archived), with who reports to whom: ${esc(people.map((e) => e.name).join(', '))}.</p>`)
+    + row('picture', id ? 'Their picture' : `Pictures (${pics})`, pics ? (id ? 'Their profile picture.' : 'Everyone who has one.') : 'No pictures yet.', pics > 0, !pics)
+    + row('skills', `${id ? 'Their skills' : 'Skills'}${skills.length ? ` (${skills.length})` : ''}`, skills.length ? `${esc(skills.join(', '))}. Each with all its files${id ? '' : ', stored once however many people use it'}, so your friend can use them too.` : 'No skills of their own yet (everyone has the core ones).', skills.length > 0, !skills.length)
+    + row('notes', id ? 'Their notes' : 'Notes', "What they've learned while working. Often about you, so it's off unless you want it shared.", false, false);
+  $('#exportDialog').showModal();
+}
+// Download a backup: a tick box for each part; the database (team, chats, tasks, projects, settings) always goes in.
+async function openBackup() {
+  let info;
+  try { info = await api('GET', '/api/backup/parts'); } catch (err) { return showError(err); }
+  $('#bkList').innerHTML = `<label class="bkrow"><input type="checkbox" checked disabled><span><b>Team, chats and settings</b><small>Your team and their rules, chats, tasks, projects and settings. Always included.</small></span><span class="hint">${sizeOf(info.core)}</span></label>`
+    + info.parts.map((x) => `<label class="bkrow"><input type="checkbox" data-bk="${x.key}" data-size="${x.size}" checked><span><b>${esc(x.label)}</b><small>${esc(x.what)}</small></span><span class="hint">${x.size ? sizeOf(x.size) : 'empty'}</span></label>`).join('');
+  $('#bkList').dataset.core = info.core;
+  backupTotal();
+  $('#backupDialog').showModal();
+}
+const backupTotal = () => { $('#bkSize').textContent = `About ${sizeOf([...document.querySelectorAll('[data-bk]:checked')].reduce((n, x) => n + Number(x.dataset.size), Number($('#bkList').dataset.core)))} before compressing`; };
+async function removeSkill(id) {
+  const x = skillList?.find((k) => k.id === id);
+  if (!confirm(`Remove ${x?.name ?? 'this skill'}? Everyone who has it loses it. You can add it from GitHub again.`)) return;
+  try { await api('POST', '/api/skills/remove', { id }); await loadSkills(true); } catch (err) { return showError(err); }
+  await tick();
+}
+// ---------- hire with help: Orbit's own hiring assistant (not one of your team) interviews you in rounds, proposes people, you choose, Orbit hires them ----------
+let hw = null; // { rounds: [[{ question, answer }]], questions, picks: [Set of labels], other: [text], plan: { summary, hires }, busy, done }
+function hireWithHelp() {
+  hw = { rounds: [], questions: null, picks: [], other: [], plan: null, busy: false, done: null };
+  $('#hireDialog').showModal();
+  hireNext();
+}
+async function hireNext() {
+  hw.busy = true;
+  $('#hErr').textContent = '';
+  renderHire();
+  try {
+    const r = await api('POST', '/api/hiring/next', { rounds: hw.rounds });
+    if (r.questions) Object.assign(hw, { questions: r.questions, picks: r.questions.map(() => new Set()), other: r.questions.map(() => '') });
+    else Object.assign(hw, { questions: null, plan: { summary: r.summary, hires: r.hires.map((h) => ({ ...h, on: true })) } });
+  } catch (err) { $('#hErr').textContent = err.message; }
+  hw.busy = false;
+  renderHire();
+}
+function hireAnswer() {
+  hw.rounds.push(hw.questions.map((q, i) => ({ question: q.question, answer: [...hw.picks[i], hw.other[i].trim()].filter(Boolean).join('; ') })));
+  hireNext();
+}
+async function hireGo() {
+  const keep = hw.plan.hires.filter((h) => h.on);
+  $('#hErr').textContent = '';
+  try { hw.done = (await api('POST', '/api/hiring/hire', { hires: keep })).hired; } catch (err) { return ($('#hErr').textContent = err.message); }
+  await tick(); // the new people (and your main assistant) first, then the summary
+  renderHire();
+}
+function renderHire() {
+  const h = hw, on = h.plan ? h.plan.hires.filter((x) => x.on).length : 0;
+  $('#hStep').textContent = h.busy ? '' : h.done ? 'Done' : h.plan ? 'Your new people' : h.questions ? `Round ${h.rounds.length + 1}` : '';
+  const people = (h.plan?.hires ?? []).map((x) => x.name);
+  const boss = (x, i) => `<option value="owner">You</option>${[...state.employees.map((e) => e.name), ...people.filter((n, j) => j !== i)].map((n) =>
+    `<option ${n.toLowerCase() === String(x.reports_to).toLowerCase() ? 'selected' : ''}>${esc(n)}</option>`).join('')}`;
+  const pick = (name, list, value) => `<select data-hf="${name}">${list.map(([v, label]) => `<option value="${v}" ${v === value ? 'selected' : ''}>${label}</option>`).join('')}</select>`;
+  setHTML($('#hBody'), h.busy ? `<div class="hbusy">${icon('spark')}<span>${h.rounds.length ? 'Thinking about your answers…' : 'Your hiring assistant is getting ready…'}</span></div>`
+    : h.done ? `<p class="hint">Hired ${h.done.length} ${h.done.length === 1 ? 'person' : 'people'}. Their profile pictures and skills are being added now.${
+        h.done.some((x) => x.id === state.settings.main_assistant) && state.employees.length === h.done.length ? ` ${esc(emp(state.settings.main_assistant)?.name ?? '')} is your main assistant: start a chat with them on the home page.` : ''}</p>
+        <div class="hdone">${h.done.map((x) => `<a class="row" href="#/person/${x.id}" data-close>${av(x.name)}<div class="main"><div class="t">${esc(x.name)}</div></div>${icon('chevr')}</a>`).join('')}</div>`
+    : h.questions ? `<p class="hint">Pick what fits, or say it in your own words. Your answers shape who gets hired.</p>` + h.questions.map((q, i) => `<div class="hq">
+        <div><b>${esc(q.question)}</b>${q.multi ? '<span class="hint"> · pick any</span>' : ''}</div>
+        <div class="hopts">${q.options.map((o) => `<button type="button" class="hopt ${h.picks[i].has(o.label) ? 'on' : ''}" data-hq="${i}" data-hopt="${esc(o.label)}" aria-pressed="${h.picks[i].has(o.label)}">
+          <b>${esc(o.label)}</b>${o.description ? `<small>${esc(o.description)}</small>` : ''}</button>`).join('')}</div>
+        <input class="hother" data-hother="${i}" autocomplete="off" placeholder="Or in your own words…" value="${esc(h.other[i])}"></div>`).join('')
+    : h.plan ? `<p class="hsum">${esc(h.plan.summary)}</p>` + h.plan.hires.map((x, i) => `<div class="hcard ${x.on ? '' : 'off'}" data-hcard="${i}">
+        <div class="hrow"><input type="checkbox" data-hon="${i}" ${x.on ? 'checked' : ''} aria-label="Hire ${esc(x.name)}">
+          <input class="hname" data-hf="${i}:name" value="${esc(x.name)}" aria-label="Name"><input class="htitle" data-hf="${i}:title" value="${esc(x.title)}" aria-label="Title">
+          ${!state.employees.length && i === 0 ? '<span class="pill" title="Your first teammate runs the team for you">Main assistant</span>' : ''}</div>
+        ${x.why ? `<p class="hwhy">${esc(x.why)}</p>` : ''}
+        <details><summary>${icon('chevr', 'chev')}Job, personality and settings</summary>
+          <label>Job description<textarea rows="5" data-hf="${i}:job_description">${esc(x.job_description)}</textarea></label>
+          <label>Personality<textarea rows="2" data-hf="${i}:personality">${esc(x.personality)}</textarea></label>
+          <div class="hrow"><label>Reports to<select data-hf="${i}:reports_to">${boss(x, i)}</select></label>
+            <label>Model${pick(`${i}:model`, [['auto', 'Auto'], ...(state.models ?? []).map((m) => [m.value, m.engine === 'claude' ? m.label : `${m.label} · ${ENGINE_NAME[m.engine]}`])], x.model)}</label>
+            <label>Files${pick(`${i}:file_access`, [['read', 'Read only'], ['edit', 'Can edit'], ['full', 'Full access']], x.file_access)}</label></div></details></div>`).join('')
+    : `<p class="hint">Something went wrong. Try again.</p>`);
+  setHTML($('#hFoot'), h.done ? '<span class="grow"></span><button type="button" class="btn primary" data-close>Close</button>'
+    : `<button type="button" class="btn ghost" data-hrestart ${h.busy || !h.rounds.length ? 'hidden' : ''}>Start over</button><span class="grow"></span><button type="button" class="btn" data-close>Cancel</button>` +
+      (h.busy ? '' : h.questions ? `<button type="button" class="btn primary" data-hnext>Next</button>`
+        : h.plan ? `<button type="button" class="btn primary" data-hgo ${on ? '' : 'disabled'}>Hire ${on} ${on === 1 ? 'person' : 'people'}</button>`
+        : '<button type="button" class="btn primary" data-hretry>Try again</button>'));
+}
+
+async function autoAssignSkills(b) {
+  const label = b.innerHTML, note = $('#skNote');
+  b.disabled = true;
+  b.innerHTML = `${icon('spark')} Matching skills…`;
+  try {
+    const { added } = await api('POST', '/api/skills/auto'), got = Object.entries(added).filter(([, list]) => list.length);
+    note.innerHTML = got.length ? `${icon('check')}<span>${got.map(([name, list]) => `<b>${esc(name)}</b>: ${list.map(esc).join(', ')}`).join('<br>')}</span>`
+      : `${icon('check')}<span>Everyone already has the skills that fit their job.</span>`;
+    note.hidden = false;
+  } catch (err) { showError(err); } finally { b.disabled = false; b.innerHTML = label; await tick(); }
 }
 function renderEdSkills() {
   const box = $('#edSkills');
@@ -2327,7 +2725,7 @@ function renderEdSkills() {
     || '<p class="hint" style="margin:0">No skills yet.</p>';
   if (!$('#skPicker').hidden) {
     const q = $('#skPickQ').value.trim().toLowerCase();
-    const left = (skillList ?? []).filter((x) => !edSkills.includes(x.id) && (!q || (x.name + ' ' + x.description + ' ' + x.group).toLowerCase().includes(q)))
+    const left = (skillList ?? []).filter((x) => !x.core && !edSkills.includes(x.id) && (!q || (x.name + ' ' + x.description + ' ' + x.group).toLowerCase().includes(q)))
       .sort((a, b) => (q ? b.name.toLowerCase().includes(q) - a.name.toLowerCase().includes(q) : 0)).slice(0, 60);
     $('#skPickList').innerHTML = left.map((x) => `<button type="button" class="skopt" data-skpick="${esc(x.id)}">${icon(x.mine ? 'pen' : 'spark')}<span><b>${esc(x.name)}</b><small>${esc(x.group)} · ${esc(x.description)}</small></span>${icon('plus')}</button>`).join('')
       || '<p class="empty">Nothing else matches.</p>';
@@ -2549,6 +2947,32 @@ const under = (id) => { // a task and everything handed out from it, however dee
 const inboxRow = (x) => `<button class="row inrow k-${x.kind}" data-inbox="${x.key}"><span class="inico">${icon(INBOX[x.kind][0])}</span>
   <div class="main"><div class="t">${esc(x.text)}</div><div class="sub">${esc(nameOf(x.who))} · ${INBOX[x.kind][1]}${x.about ? ` · for "${esc(x.about)}"` : ''}${x.at ? ' · ' + rel(x.at) : ''}</div></div>
   <span class="go">${icon('chevr')}</span></button>`;
+// ---------- Live: everything running right now ----------
+const dur = (ms) => { const s = Math.max(0, Math.floor(ms / 1000)); return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`; };
+const nowStep = (t) => { // the last line of what they're doing: a tool ("→ Write index.html") or what they said. A reply being written shows only when done.
+  const l = (t.tail || '').split('\n').map((x) => x.trim()).filter(Boolean).at(-1);
+  return !l ? `${icon('spark')}<span>Thinking…</span>` : l.startsWith('→ ') ? `${icon('code')}<span>${esc(l.slice(2))}</span>` : `${icon('chat')}<span>${esc(l.slice(0, 200))}</span>`;
+};
+function renderLive() {
+  const by = (st) => state.tasks.filter((t) => t.status === st), working = by('working'), queued = by('queued'), waiting = by('waiting'), needs = inbox().length;
+  const tile = (n, label, cls = '', href = '') => `<${href ? `a href="${href}"` : 'div'} class="ltile ${cls}"><b>${n}</b><span>${label}</span></${href ? 'a' : 'div'}>`;
+  setHTML($('#liveTiles'), tile(working.length, 'Working now', working.length ? 'on' : '') + tile(queued.length, 'Up next') + tile(waiting.length, 'Waiting on teammates')
+    + tile(needs, 'Need you', needs ? 'warn' : '', '#/inbox'));
+  const card = (t) => { const name = nameOf(t.employee_id), p = proj(t.project_id);
+    return `<div class="lcard"><div class="lhead">${av(name, true)}<div class="main"><b>${esc(name)}</b><a href="#/task/${t.id}">${esc(t.title)}</a></div><span class="live pill">live</span></div>
+      <div class="lnow">${nowStep(t)}</div>
+      <div class="lfoot"><span>${t.kind === 'chat' ? 'Chat' : `Task #${t.id}`}${p ? ` · ${esc(p.name)}` : ''}${t.since ? ` · for <span data-since="${t.since}"></span>` : ''}${t.cost ? ` · ${money(t.cost)}` : ''}</span>
+        <span class="grow"></span><a class="btn small ghost" href="#/task/${t.id}">Open</a><button class="btn small" data-livestop="${t.id}">${icon('stop')} Stop</button></div></div>`; };
+  const row = (t, what) => `<a class="row" href="#/task/${t.id}">${av(nameOf(t.employee_id))}<div class="main"><div class="t">${esc(t.title)}</div><div class="sub">${esc(nameOf(t.employee_id))} · ${what}</div></div></a>`;
+  const team = state.employees.map((e) => { const on = working.some((t) => t.employee_id === e.id);
+    return `<a class="lperson ${on ? 'on' : ''}" href="#/person/${e.id}" title="${esc(e.name)}: ${on ? 'working' : 'free'}">${av(e.name, true)}</a>`; }).join('');
+  setHTML($('#liveBody'), (working.length ? `<div class="lgrid">${working.map(card).join('')}</div>`
+      : `<div class="pc-empty">${icon('pulse')}<b>No one is working right now</b><span>When your team picks something up, it shows here as it happens.</span></div>`)
+    + (queued.length ? `<section class="arcsec"><h3>Up next</h3>${queued.map((t) => row(t, "starts when they're free")).join('')}</section>` : '')
+    + (waiting.length ? `<section class="arcsec"><h3>Waiting on teammates</h3>${waiting.map((t) => row(t, 'waiting for the work they handed out')).join('')}</section>` : '')
+    + `<section class="arcsec"><h3>Your team · ${working.length ? `${new Set(working.map((t) => t.employee_id)).size} working` : 'all free'}</h3><div class="lteam">${team}</div></section>`);
+  document.querySelectorAll('[data-since]').forEach((x) => (x.textContent = dur(Date.now() - Number(x.dataset.since)))); // the clocks tick without redrawing the cards
+}
 function renderInbox() {
   setHTML($('#inboxList'), inbox().map(inboxRow).join('') || '<p class="empty">Nothing needs you right now. Requests for your OK and finished work show up here.</p>');
 }
@@ -2618,7 +3042,10 @@ function renderPic(stage, draft) {
   $('#picStyles').innerHTML = Object.entries(state.styles ?? {}).map(([k, x]) =>
     `<button type="button" class="pstyle ${k === picStyle ? 'on' : ''}" data-pstyle="${k}"><b>${esc(x.label)}</b><small>${esc(x.blurb)}</small></button>`).join('');
   $('#picNow').innerHTML = e.me ? ownerAv(true) : av(e.name, true);
-  if (!$('#picModel').options.length) { $('#picModel').innerHTML = modelChoices('', state.settings.default_model); $('#picModel').value = 'sonnet'; } // fast, cheap, and draws well
+  if (!$('#picModel').options.length) { // the main AI draws them (on Claude, Sonnet is fast, cheap, and draws well)
+    const main = state.settings.main_engine || 'claude', first = main === 'claude' ? 'sonnet' : state.models.find((m) => m.engine === main)?.value ?? '';
+    $('#picModel').innerHTML = modelChoices('', first, main); $('#picModel').value = first;
+  }
   $('#picRemove').hidden = !e.avatar;
   $('#picUse').hidden = stage !== 'done';
   $('#picGo').disabled = stage === 'busy';
@@ -2719,6 +3146,11 @@ document.addEventListener('click', async (ev) => {
   if (el('[data-rail]') && edDirty && !el('[data-rail]').classList.contains('on') && !confirm('Leave without saving your changes?')) { ev.preventDefault(); return; }
   if (!el('.plus')) closeMenus();
   if (point && !el('.pointpop') && !el('.composer textarea') && !el('[data-point]')) closePoint();
+  if (el('[data-conncheck]')) return renderConnectors($('#sContent'), true);
+  if (el('[data-connmain]')) { // a new main AI
+    try { await api('PUT', '/api/connectors', { main: el('[data-connmain]').dataset.connmain }); await tick(); } catch (err) { showError(err); }
+    return renderConnectors($('#sContent'), true);
+  }
   if (el('[data-plus]')) { const m = el('.plus').querySelector('.plusmenu'), open = m.hidden; closeMenus(); m.hidden = !open; el('[data-plus]').setAttribute('aria-expanded', String(open)); return; }
   if (el('[data-upload]')) { closeMenus(); el('.plus').querySelector('.attachfile').click(); return; }
   if (el('[data-point]')) { closeMenus(); openPoint(el('form'), null); return; }
@@ -2746,6 +3178,20 @@ document.addEventListener('click', async (ev) => {
   else if (el('[data-tclose]')) { orgSel = null; renderTeam(); }
   else if (el('[data-node]')) { const v = el('[data-node]').dataset.node; orgSel = v === 'owner' ? 'owner' : Number(v); renderTeam(); }
   else if (el('[data-sknew]')) openSkillDialog(null);
+  else if (el('[data-skauto]')) autoAssignSkills(el('[data-skauto]'));
+  else if (el('[data-skgithub]')) { const f = $('#ghForm'); f.hidden = !f.hidden; el('[data-skgithub]').ariaExpanded = String(!f.hidden); if (!f.hidden) f.url.focus(); }
+  else if (el('[data-skdel]')) removeSkill(el('[data-skdel]').dataset.skdel);
+  else if (el('[data-hirehelp]')) hireWithHelp();
+  else if (el('[data-hopt]')) { const b = el('[data-hopt]'), i = Number(b.dataset.hq), q = hw.questions[i], set = hw.picks[i];
+    if (q.multi) set.has(b.dataset.hopt) ? set.delete(b.dataset.hopt) : set.add(b.dataset.hopt); else { const had = set.has(b.dataset.hopt); set.clear(); if (!had) set.add(b.dataset.hopt); }
+    renderHire(); }
+  else if (el('[data-hnext]')) hireAnswer();
+  else if (el('[data-hretry]')) hireNext();
+  else if (el('[data-hrestart]')) hireWithHelp();
+  else if (el('[data-hgo]')) hireGo();
+  else if (el('[data-drawmissing]')) act('POST', '/api/pictures/missing');
+  else if (el('[data-skaperson]')) { const b = el('[data-skaperson]'), set = skaPicks[b.dataset.ska], id = Number(b.dataset.skaperson); set.has(id) ? set.delete(id) : set.add(id); renderAssign(); }
+  else if (el('#skaGo')) applyAssign();
   else if (el('[data-skedit]')) openSkillDialog(skillList.find((x) => x.id === el('[data-skedit]').dataset.skedit));
   else if (el('[data-skassign]')) { const id = el('[data-skassign]').dataset.skassign; skOpen = skOpen === id ? null : id; renderSkills($('#sContent')); }
   else if (el('[data-skperson]')) {
@@ -2784,12 +3230,19 @@ document.addEventListener('click', async (ev) => {
   else if (el('[data-sidebar-hide]')) { const b = el('[data-sidebar-hide]'); await act('POST', `/api/employees/${b.dataset.sidebarHide}/sidebar`, { hidden: b.dataset.hidden === '1' }); }
   else if (el('[data-show-hidden]')) { showHidden = !showHidden; renderSide(); }
   else if (el('[data-browse]')) { const b = el('[data-browse]'); openPicker(b.dataset.browse ? $('#' + b.dataset.browse) : b.previousElementSibling); }
-  else if (el('#backupBtn')) { // the browser saves it to your Downloads
-    const b = el('#backupBtn');
-    b.disabled = true;
-    b.innerHTML = `${icon('archive')} Making your backup…`;
-    location.href = '/api/backup';
-    setTimeout(() => { b.disabled = false; b.innerHTML = `${icon('archive')} Download a backup`; }, 4000);
+  else if (el('#backupBtn')) openBackup();
+  else if (el('[data-exportperson]')) openExport(Number(el('[data-exportperson]').dataset.exportperson));
+  else if (el('[data-exportteam]')) openExport(null);
+  else if (el('#exGo')) { // the browser saves the file to your Downloads
+    const on = (k) => ($(`[data-ex="${k}"]`)?.checked ? 1 : 0);
+    $('#exportDialog').close();
+    location.href = `/api/${$('#exportDialog').dataset.id ? `employees/${$('#exportDialog').dataset.id}` : 'team'}/export?picture=${on('picture')}&skills=${on('skills')}&notes=${on('notes')}`;
+  }
+  else if (el('#bkGo')) { // the browser saves it to your Downloads
+    const parts = [...document.querySelectorAll('[data-bk]:checked')].map((x) => x.dataset.bk), b = $('#backupBtn');
+    $('#backupDialog').close();
+    location.href = `/api/backup?parts=${parts.join(',')}`;
+    if (b) { b.disabled = true; b.innerHTML = `${icon('archive')} Making your backup…`; setTimeout(() => { b.disabled = false; b.innerHTML = `${icon('archive')} Download a backup`; }, 4000); }
   }
   else if (el('[data-opendata]')) act('POST', '/api/data/open');
   else if (el('[data-askmac]')) {
@@ -2848,6 +3301,8 @@ document.addEventListener('click', async (ev) => {
   else if (el('[data-unview]')) { viewingFile = null; await renderItem(); }
   else if (el('#cDone')) act('POST', `/api/tasks/${view.id}/done`);
   else if (el('#cStop')) act('POST', `/api/tasks/${view.id}/stop`);
+  else if (el('#cInterrupt')) { interruptNext = true; $('#msgForm').requestSubmit(); }
+  else if (el('[data-livestop]')) act('POST', `/api/tasks/${el('[data-livestop]').dataset.livestop}/stop`);
   else if (el('#cPanel')) { panelOpen = !panelOpen; $('#chat').classList.toggle('panel-open', panelOpen); }
   else if (el('#menuBtn')) $('.app').classList.toggle('nav-open');
   else if (el('[data-new]') && view.name === 'home') $('#newForm textarea')?.focus();
@@ -2858,6 +3313,11 @@ document.addEventListener('click', async (ev) => {
 
 document.addEventListener('submit', async (ev) => {
   const f = ev.target;
+  if (f.dataset.connkey) { // your xAI key: saved on this Mac, never shown again
+    ev.preventDefault();
+    try { await api('PUT', '/api/connectors', { engine: f.dataset.connkey, key: f.elements.key.value }); } catch (err) { return showError(err); }
+    return renderConnectors($('#sContent'), true);
+  }
   if (f.id === 'skillForm') {
     ev.preventDefault();
     try {
@@ -2888,9 +3348,11 @@ document.addEventListener('submit', async (ev) => {
     } catch (err) { (f.id === 'empForm' ? $('#empErr') : $('#formState')).textContent = err.message; }
     return;
   }
+  if (f.id === 'ghForm') { ev.preventDefault(); return addGithubSkills(f); }
   if (f.id !== 'newForm' && f.id !== 'msgForm') return;
   ev.preventDefault();
-  const send = f.querySelector('.send'), files = attachList(f);
+  const send = f.querySelector('.send'), files = attachList(f), interrupt = interruptNext;
+  interruptNext = false;
   if (files.some((a) => a.busy)) return showError(new Error('Wait a moment: your files are still uploading.'));
   const paths = files.filter((a) => a.path && !a.error).map((a) => a.path), ta = f.querySelector('textarea');
   if (!ta.value.trim() && !paths.length) return ta.focus();
@@ -2903,7 +3365,7 @@ document.addEventListener('submit', async (ev) => {
         project_id: Number(body.project_id) || null, model: body.model || null, effort: body.effort || null, attachments: paths });
       location.hash = `#/task/${id}`;
     } else {
-      await api('POST', `/api/tasks/${view.id}/messages`, { text: ta.value.trim(), attachments: paths });
+      await api('POST', `/api/tasks/${view.id}/messages`, { text: ta.value.trim(), attachments: paths, interrupt });
       ta.value = '';
       ta.style.height = '';
       attachments.set(f, []);
@@ -2942,6 +3404,7 @@ document.addEventListener('keydown', (ev) => {
   if (ev.key === 'Enter' && ev.target.id === 'fNewName') { ev.preventDefault(); newFolder(); }
   if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing && ev.target.matches('.composer textarea')) {
     ev.preventDefault();
+    if ((ev.metaKey || ev.ctrlKey) && ev.target.id === 'cMsg' && !$('#cInterrupt').hidden) interruptNext = true; // ⌘↩: interrupt and send
     ev.target.form.requestSubmit();
   }
 });
@@ -2949,6 +3412,16 @@ document.addEventListener('input', (ev) => {
   if (ev.target.id === 'lookDim') applyAppearance({ ...look(), dim: Number(ev.target.value) }); // preview while dragging
   if (ev.target.id === 'lookColor') applyAppearance({ ...look(), accent: ev.target.value });
   if (ev.target.id === 'askOther' && ask) ask.other[ask.i] = ev.target.value;
+  if (ev.target.dataset?.hother) hw.other[Number(ev.target.dataset.hother)] = ev.target.value; // hire with help: your own answer
+  if (ev.target.dataset?.hf) { // an edit to a proposed hire
+    const [i, k] = ev.target.dataset.hf.split(':'), x = hw.plan.hires[Number(i)], v = ev.target.value, old = x[k];
+    x[k] = v;
+    if (k === 'name' && /^[\w-]{2,}$/.test(old) && v.trim()) for (const f of ['job_description', 'personality']) { // a new name: "You are Probe" follows it
+      x[f] = x[f].replace(new RegExp(`\\b${old}\\b`, 'g'), v.trim());
+      const box = ev.target.closest('.hcard').querySelector(`[data-hf="${i}:${f}"]`);
+      if (box) box.value = x[f];
+    }
+  }
   if (ev.target.id === 'skQ') { skillQ = ev.target.value; renderSkills($('#sContent')); }
   if (ev.target.id === 'skPickQ') renderEdSkills();
   if (ev.target.matches?.('.pointq')) { clearTimeout(pointTimer); const q = ev.target.value; pointTimer = setTimeout(() => searchPoint(q), 120); }
@@ -2967,16 +3440,41 @@ document.addEventListener('input', (ev) => {
 });
 document.addEventListener('change', async (ev) => {
   const t = ev.target;
+  if (t.dataset.conn) { // Settings → Connectors: switch an engine on or off
+    t.disabled = true;
+    try { await api('PUT', '/api/connectors', { engine: t.dataset.conn, on: t.checked }); await tick(); } catch (err) { t.checked = !t.checked; showError(err); }
+    return renderConnectors($('#sContent'), true);
+  }
   if (t.id === 'lookDim') saveLook({ dim: Number(t.value) }, { quiet: true });
   if (t.id === 'lookColor') saveLook({ accent: t.value });
   if (t.id === 'lookFile' && t.files[0]) uploadLook(t.files[0]);
   if (t.id === 'mePhoto' && t.files[0]) uploadMe(t.files[0]);
+  if (t.id === 'personImport' && t.files[0]) { // a teammate someone exported: check what it is, ask, then add them
+    const text = await t.files[0].text();
+    t.value = '';
+    let d = null;
+    try { d = JSON.parse(text); } catch {}
+    const team = d?.orbit === 'team' && Array.isArray(d.people);
+    if (!team && (d?.orbit !== 'teammate' || !d.person)) return showError(new Error("That isn't an Orbit teammate or team file. Ask for one exported from a person's page or Settings → Team."));
+    const n = d.skills?.length ?? 0, names = team ? d.people.map((x) => x.person?.name).filter(Boolean) : [];
+    const what = team ? `${names.length} people (${names.slice(0, 6).join(', ')}${names.length > 6 ? ', …' : ''})` : `${d.person.name}${d.person.title ? `, ${d.person.title},` : ''}`;
+    if (!confirm(`Add ${what} to your team${n ? ` with ${n} skill${n === 1 ? '' : 's'}` : ''}? ${team ? 'They keep who reports to whom; the top ones report to you.' : "They'll report to you."}\n\nOnly import from people you trust: skills can include scripts your team may run.`)) return;
+    try { const r = await api('POST', '/api/employees/import', { file: text }); await loadSkills(true); await tick(); location.hash = r.team ? '#/team' : `#/person/${r.id}`; } catch (err) { showError(err); }
+  }
   if (t.id === 'skImport' && t.files[0]) { const md = readSkillMd(await t.files[0].text()); t.value = ''; openSkillDialog({ ...md, name: md.name || t.files[0].name.replace(/\.md$/i, '') }); }
   if (t.matches?.('.attachfile') && t.files.length) { addUploads(t.form, [...t.files]); t.value = ''; }
   if (t.form?.id === 'generalForm' && t.name) t.form.requestSubmit(); // General settings save as you change them
   if (t.id === 'newWho') { lastWho = Number(t.value); lastModel = lastEffort = ''; shown.delete($('#newModel')); shown.delete($('#newEffort')); renderHome(); }
   if (t.id === 'newProj') homeProject = Number(t.value) || null;
   if (t.id === 'newFolder') renderHome();
+  if (t.dataset.bk) backupTotal();
+  if (t.dataset.hon) { // keep or drop a proposed hire; the rest of the card stays as you left it
+    hw.plan.hires[Number(t.dataset.hon)].on = t.checked;
+    t.closest('.hcard').classList.toggle('off', !t.checked);
+    const n = hw.plan.hires.filter((x) => x.on).length, go = $('[data-hgo]');
+    go.disabled = !n;
+    go.textContent = `Hire ${n} ${n === 1 ? 'person' : 'people'}`;
+  }
   if (t.id === 'newModel') lastModel = t.value;
   if (t.id === 'newEffort') lastEffort = t.value;
   if (t.id === 'cEffort') await act('PUT', `/api/tasks/${view.id}`, { effort: t.value });
