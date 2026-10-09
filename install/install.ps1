@@ -79,7 +79,7 @@ function Describe($json) {
 # 3. Copy the app to its own folder (so it runs no matter where you downloaded it)
 New-Item -ItemType Directory -Force -Path $App, $Data | Out-Null
 if ((Resolve-Path $Src).Path -ne (Resolve-Path $App).Path) {
-  Copy-Item (Join-Path $Src 'server.js'), (Join-Path $Src 'index.html'), (Join-Path $Src 'backup.mjs'), (Join-Path $Src 'mcp-bridge.mjs'), (Join-Path $Src 'package.json') -Destination $App -Force
+  Copy-Item (Join-Path $Src 'server.js'), (Join-Path $Src 'index.html'), (Join-Path $Src 'mobile.html'), (Join-Path $Src 'backup.mjs'), (Join-Path $Src 'mcp-bridge.mjs'), (Join-Path $Src 'package.json') -Destination $App -Force
   if (Test-Path (Join-Path $App 'brand')) { Remove-Item (Join-Path $App 'brand') -Recurse -Force }
   Copy-Item (Join-Path $Src 'brand') -Destination (Join-Path $App 'brand') -Recurse -Force
   if (Test-Path (Join-Path $App 'skills')) { Remove-Item (Join-Path $App 'skills') -Recurse -Force }

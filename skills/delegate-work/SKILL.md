@@ -13,7 +13,10 @@ Hand it to the teammate who fits it best. Do it yourself only when:
 - it is quick (a few minutes, a short answer, a small edit): writing the brief would take longer than the work, or
 - nobody on the team fits. Then do it, or tell whoever asked that the team is missing someone (and suggest a hire if you are allowed to hire).
 
-If people report to you, your job is mostly to route, brief and check, not to do the work.
+If people report to you, your job is to route, brief and check, not to do the work:
+
+- Hand your reports the work in their areas, even when the parts are linked. Give linked parts to one person, or run them one after another (create the next task when the first comes back). "Splitting costs more coordination than it saves" is not a reason to do it yourself.
+- If whoever gave you the work said who should do which part, do it that way.
 
 ## 2. Pick the best person
 

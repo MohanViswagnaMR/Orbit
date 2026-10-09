@@ -22,7 +22,7 @@ It works on **macOS, Windows and Linux**.
 - **Claude, ChatGPT or Gemini.** Your team can run on any of them: one is the main AI, and in Settings → Connectors you can switch on the others (and Grok, with your xAI API key). Then anyone can run on them, or Auto can pick them when they fit best.
 - **Work in projects.** Each project has a folder and a shared memory the team keeps up to date.
 - **Attach files.** Upload files, or point at files in the project with `@`.
-- **From your phone.** Open the whole of Orbit from anywhere through a web link with a password (a free Cloudflare link, or your own domain), or chat with your team from **Telegram** or **WhatsApp**: requests for your OK, questions and finished work come with buttons.
+- **From your phone.** Phones get a mobile version made for one thumb: bottom tabs, chats with the message box above the keyboard, one-tap Allow / Don't allow, answering questions by tapping, photos as attachments, and a Live view. Open it from anywhere through a web link with a password (a free Cloudflare link, or your own domain), or chat with your team from **Telegram** or **WhatsApp**: requests for your OK, questions and finished work come with buttons.
 - **Share a teammate.** Export one person, or your whole team, as a file with their skills, and give it to a friend. Importing never overwrites anyone: a clashing name gets a number.
 - **Make it yours.** Themes, accent colours, backgrounds and any Google Font. Install it as an app with its own window.
 
@@ -109,6 +109,7 @@ node --test         # run the tests
 
 - `server.js`: the whole backend: HTTP API, SQLite through `node:sqlite`, the MCP tools employees use, and the engines that run each turn (Claude Code, Codex, Antigravity).
 - `index.html`: the whole interface.
+- `mobile.html`: the interface on phones (Orbit picks it by itself; either one can switch to the other).
 - `backup.mjs`: backups and restores, also used by the installers.
 - `mcp-bridge.mjs`: Orbit's tools for Antigravity, which only takes tool connections from its own settings.
 - `skills/`: Orbit's core skills, which everyone on every team has.

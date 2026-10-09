@@ -28,7 +28,7 @@ await new Promise((ok) => fakeApi.once('listening', ok));
 process.env.TELEGRAM_API = process.env.GRAPH_API = `http://127.0.0.1:${fakeApi.address().port}`;
 after(() => { fs.rmSync(process.env.CREW_DATA, { recursive: true, force: true }); fs.rmSync(aFile, { force: true }); fakeApi.close(); });
 const { pickNotes, splitNotes, nextRun, permsOf, checkFolder, listFolder, bashPrefix, preApproved, describe, cleanAppearance, messageFiles, cleanSvg, STYLES, TOOLS, searchFonts, setBoss, cleanQuestions, cleanAttachments, rankFiles, archive, readSkillMd, saveSkill, findSkills, assignSkill, skillsOf, pickSkills, parseGithubUrl, searchSkills, readHiring, hireAll, exportPerson, exportTeam, importPerson, engineOf, availableModels, modelOk, readPick, readCodex, readAntigravity, sessionFor, handoff, baseModel,
-  hashPassword, passwordOk, chunks, tgHtml, waText, tgUpdate, waMessage, onButton } = await import('./server.js');
+  hashPassword, passwordOk, chunks, tgHtml, waText, tgUpdate, waMessage, onButton, approvals, decide } = await import('./server.js');
 
 test('engines: models from every engine, what Auto picks, and each engine read the same way', () => {
   assert.deepEqual([engineOf('sonnet'), engineOf('gpt:gpt-5.5'), engineOf('gemini:gemini-3.1-pro-high')], ['claude', 'gpt', 'gemini']);
@@ -155,6 +155,34 @@ test('approvals: what "don\'t ask me again" covers', () => {
   assert.equal(preApproved(npm, ws, 'Bash', { command: 'npm install express' }), true);
   assert.equal(preApproved(npm, ws, 'Bash', { command: 'npm installer' }), false);
   assert.equal(preApproved(npm, ws, 'Bash', { command: 'npm publish' }), false);
+});
+
+test('Auto access: edits in their folder are free; what the safety check flags asks you, and says why', () => {
+  const auto = { name: 'Kai', access: 'auto', allow: '{}' };
+  assert.equal(preApproved(auto, '/work/kai', 'Write', { file_path: '/work/kai/a.js' }), true);
+  const cmd = describe(auto, '/work/kai', 'Bash', { command: 'git push --force' });
+  assert.match(cmd.needs, /safety check/);
+  assert.equal(cmd.always.rule, 'Bash(git push:*)');
+});
+
+test('plan first: the plan waits for your OK; "not yet" keeps them planning, "start" switches them to their usual mode', async () => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(path.join(process.env.CREW_DATA, 'crew.db'));
+  const e = Number(db.prepare("INSERT INTO employees (name, role, model, access, folder) VALUES ('Planner', 'x', 'sonnet', 'auto', '/w')").run().lastInsertRowid);
+  const t = Number(db.prepare("INSERT INTO tasks (kind, title, employee_id, status, plan) VALUES ('chat', 'x', ?, 'working', 1)").run(e).lastInsertRowid);
+  const ask = (id) => TOOLS.find((x) => x.name === 'permission_prompt').run({ tool_name: 'ExitPlanMode', input: { plan: '1. Do X' }, tool_use_id: id }, { taskId: t, employeeId: e, cwd: '/w', mode: 'auto' });
+  const waiting = () => [...approvals.values()].find((a) => a.taskId === t);
+  let answer = ask('a');
+  assert.equal(waiting().always, null);
+  assert.equal(waiting().why, '1. Do X');
+  decide(waiting().id, false, false);
+  assert.match(JSON.parse(await answer).message, /hasn't approved this plan/);
+  assert.equal(db.prepare('SELECT plan FROM tasks WHERE id = ?').get(t).plan, 1);
+  answer = ask('b');
+  decide(waiting().id, true, true); // "don't ask again" can't apply to a plan
+  assert.deepEqual(JSON.parse(await answer).updatedPermissions, [{ type: 'setMode', mode: 'auto', destination: 'session' }]);
+  assert.equal(db.prepare('SELECT plan FROM tasks WHERE id = ?').get(t).plan, 0);
+  assert.equal(db.prepare('SELECT allow FROM employees WHERE id = ?').get(e).allow, '{}');
 });
 
 test('appearance: only sane values are kept', () => {

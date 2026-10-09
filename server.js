@@ -27,17 +27,23 @@ const PORT = Number(process.env.PORT) || 4321;
 const HOSTS = [`localhost:${PORT}`, `127.0.0.1:${PORT}`];
 
 // Anything an access level doesn't cover pauses and asks you in a popup (see "asking the owner" below).
-const READ_TOOLS = ['Read', 'Grep', 'Glob', 'WebSearch', 'WebFetch', 'mcp__crew'];
-const ACCESS = {
-  read: ['--permission-mode', 'default'], // reading is free; harmless commands like ls too; the rest asks you
-  edit: ['--permission-mode', 'acceptEdits'], // edits inside its folder are free; the rest asks you
-  full: ['--permission-mode', 'bypassPermissions'], // anything, never asks
+const READ_TOOLS = ['Read', 'Grep', 'Glob', 'WebSearch', 'WebFetch', 'Skill', 'mcp__crew']; // Skill only reads a skill's instructions; anything it then does still asks
+const ACCESS = { // each access level is a Claude Code permission mode
+  read: 'default', // reading is free; harmless commands like ls too; the rest asks you
+  edit: 'acceptEdits', // edits inside its folder are free; the rest asks you
+  auto: 'auto', // Claude Code's safety check lets routine edits and commands through; what it flags as risky asks you
+  full: 'bypassPermissions', // anything, never asks
 };
+// Haiku has no Auto mode (Claude Code quietly asks about everything instead), so on Haiku, Auto works like Can edit.
+const modeOf = (e, model) => (e.access === 'auto' && /haiku/i.test(model) ? ACCESS.edit : ACCESS[e.access]);
 const ACCESS_TEXT = {
   read: 'You can read files and search the web freely. Changing files or running commands needs the owner\'s OK: try it and they get a popup to approve.',
   edit: 'You can read, and edit files inside your working folder, freely. Files elsewhere and running commands need the owner\'s OK: try it and they get a popup to approve.',
+  auto: 'You can read, edit files and run commands freely. A safety check stops anything risky (deleting things, sending data out, force-pushing and the like) and asks the owner first: try it and they get a popup to approve.',
   full: 'You can read and edit files and run commands.',
 };
+const PLAN_FIRST = 'Plan first: look into this, then show the owner your plan (what you will change, where, and how you will check it). ' +
+  "Don't change anything until they approve it.";
 // Claude Code's own task list and scheduling tools would bypass Orbit, and some reach your cloud account.
 const BLOCKED_TOOLS = ['TaskCreate', 'TaskGet', 'TaskList', 'TaskUpdate', 'TaskStop', 'CronCreate', 'CronDelete', 'CronList',
   'ScheduleWakeup', 'RemoteTrigger', 'PushNotification', 'SendMessage', 'ListAgents', 'Workflow'];
@@ -55,7 +61,7 @@ const PERMS = {
 };
 // Limits on work employees create for each other, so a loop can't run through your Claude plan.
 const LIMITS = { depth: 3, perTurn: 5, open: 20, hiresPerTurn: 6, team: 25 };
-const ACCESS_ORDER = ['read', 'edit', 'full'];
+const ACCESS_ORDER = ['read', 'edit', 'auto', 'full'];
 
 // ---------- database ----------
 fs.mkdirSync(DATA, { recursive: true });
@@ -112,6 +118,7 @@ for (const sql of [
   'ALTER TABLE messages ADD COLUMN questions TEXT', // JSON questions a reply asks the owner (ask_owner), shown as a form
   'ALTER TABLE messages ADD COLUMN skills TEXT', // JSON names of the skills a reply used, shown under it
   'ALTER TABLE tasks ADD COLUMN via TEXT', // 'telegram' or 'whatsapp': a chat you're having from your phone, so its replies go there too
+  'ALTER TABLE tasks ADD COLUMN plan INTEGER NOT NULL DEFAULT 0', // 1 = plan first: they show you a plan and wait for your OK before changing anything
 ]) try { db.exec(sql); } catch {}
 db.exec('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
 // Phones and browsers signed in through the web link: the hash of each one's cookie, and when it runs out.
@@ -510,7 +517,7 @@ function addPerson(p, { picture, notes, skills = [], reports_to = null }) {
   const svg = picture ? cleanSvg(String(picture)) : null;
   const { id } = saveEmployee({ name, title: p.title, role: p.role, personality: p.personality, rules: p.rules, reports_to,
     model: modelOk(p.model) ? p.model : 'auto', effort: EFFORTS.includes(p.effort) ? p.effort : 'default',
-    access: p.access === 'edit' || p.access === 'full' ? 'edit' : 'read', skills: [...new Set(skills)] }, undefined, { picture: !svg });
+    access: ['edit', 'auto', 'full'].includes(p.access) ? 'edit' : 'read', skills: [...new Set(skills)] }, undefined, { picture: !svg });
   if (svg) { fs.mkdirSync(AVATAR_DIR, { recursive: true }); fs.writeFileSync(path.join(AVATAR_DIR, `${id}.svg`), svg); exec('UPDATE employees SET avatar = ? WHERE id = ?', String(Date.now()), id); }
   if (notes) writeFile(notesFile(name), String(notes).slice(0, 200000));
   return { id: Number(id), name, renamed: name !== p.name };
@@ -714,7 +721,8 @@ export function preApproved(e, cwd, tool, input) {
 }
 // What a request means, why it needs you, and what "don't ask me again" would allow.
 export function describe(e, cwd, tool, input) {
-  const file = input?.file_path || input?.notebook_path;
+  const file = input?.file_path || input?.notebook_path, flagged = "Orbit's safety check thinks this one could be risky.";
+  if (tool === 'ExitPlanMode') return { what: 'Start work on this plan', preview: '', reason: String(input?.plan ?? ''), needs: 'You asked them to plan first and wait for your OK.', always: null };
   if (EDIT_TOOLS.includes(tool) && file) {
     const isNew = tool === 'Write' && !fs.existsSync(file), dir = path.dirname(path.resolve(file));
     return {
@@ -727,7 +735,7 @@ export function describe(e, cwd, tool, input) {
   }
   if (tool === 'Bash') {
     const p = bashPrefix(input.command);
-    return { what: `Run a command: ${input.command}`, preview: '', reason: input.description || '', needs: `Running commands needs your OK (${e.name}'s file access is ${e.access === 'read' ? 'Read only' : 'Can edit'}).`,
+    return { what: `Run a command: ${input.command}`, preview: '', reason: input.description || '', needs: e.access === 'auto' ? flagged : `Running commands needs your OK (${e.name}'s file access is ${e.access === 'read' ? 'Read only' : 'Can edit'}).`,
       always: { kind: 'rule', rule: `Bash(${p}:*)`, label: `Let ${e.name} run "${p} …" commands without asking` } };
   }
   if (tool.startsWith(CHROME + '__')) {
@@ -740,7 +748,7 @@ export function describe(e, cwd, tool, input) {
     return { what: doing, preview: JSON.stringify(i, null, 2).slice(0, 1200), needs: `It's your real browser, signed in to your accounts, so each action needs your OK.`,
       always: { kind: 'rule', rule: CHROME, label: `Let ${e.name} use your Chrome without asking` } };
   }
-  return { what: `Use ${tool}`, preview: JSON.stringify(input ?? {}, null, 2).slice(0, 1500), needs: `${e.name}'s access doesn't cover ${tool}.`,
+  return { what: `Use ${tool}`, preview: JSON.stringify(input ?? {}, null, 2).slice(0, 1500), needs: e.access === 'auto' ? flagged : `${e.name}'s access doesn't cover ${tool}.`,
     always: { kind: 'rule', rule: tool, label: `Let ${e.name} use ${tool} without asking` } };
 }
 
@@ -761,6 +769,8 @@ export function nextRun(s, after) {
 }
 
 // GPT and Gemini teammates can't ask for approval mid-turn: what their access doesn't allow is simply blocked.
+// ponytail: GPT and Gemini have no safety check like Claude's Auto, so Auto works like Can edit on them.
+const otherAccess = (e) => (e.access === 'auto' ? 'edit' : e.access);
 const OTHER_ACCESS = {
   read: 'You can read files. Changing files or running commands is blocked, and nobody can approve it during your turn: if the work needs it, say so in your reply.',
   edit: 'You can read and edit files in your working folder. Anything beyond your access is blocked, and nobody can approve it during your turn: if the work needs more, say so in your reply.',
@@ -795,7 +805,7 @@ function systemPrompt(e, t, cwd, engine = 'claude') {
     toOwner && bossRules ? `Rules for replying to the owner (this reply goes to them):\n${bossRules}` : '',
     claudeRun
       ? `${ACCESS_TEXT[e.access]}${perm.web ? '' : ' You cannot use the web.'}${perm.chrome ? ' You can use the owner\'s real Chrome browser through the Claude in Chrome tools. They are signed in there, so be careful: never send, post, buy or change account settings without their explicit OK.' : ''}${e.access === 'full' ? '' : ' Before something that needs the owner\'s OK, first say in one line why you need it: they see it in the approval popup.'}\nYour working folder: ${cwd}`
-      : `You run on ${engineLabel(engine)}. ${OTHER_ACCESS[e.access]}${perm.web ? '' : ' Do not use the web.'}` +
+      : `You run on ${engineLabel(engine)}. ${OTHER_ACCESS[otherAccess(e)]}${perm.web ? '' : ' Do not use the web.'}` +
         (engine === 'gemini' && e.access !== 'full' ? ' You cannot run terminal commands (not even ls or python): a blocked command ends your turn. Use your file tools instead: list_dir, find_by_name, grep_search and view_file.' : '') +
         `\nYour working folder: ${cwd}`,
     t.kind === 'chat'
@@ -810,7 +820,10 @@ function systemPrompt(e, t, cwd, engine = 'claude') {
         '\nWhen you finish, reply with the result itself: the answer, the draft, or a short summary of what you changed and where. ' +
         (toOwner ? 'If something important is unclear, ask the owner a short question before doing the work. ' : 'If something is unclear, make a sensible assumption and say what you assumed. ') +
         (perm.tasks ? 'If part of the work is better done by a teammate, give it to them with create_task (it becomes a subtask of this task; follow orbit:delegate-work), then stop: ' +
-          'their results come back to you and you continue. Do quick things yourself instead of creating tasks for them, and never hand work back up the chain it came from.' : ''),
+          'their results come back to you and you continue. Never hand work back up the chain it came from. ' +
+          (reports.length ? `You lead ${reports.map((x) => x.name).join(', ')}: doing the work in their areas is their job, yours is to plan, brief, check and report. ` +
+            'Hand them their parts even when the parts are linked (give linked parts to one person, or run them one after another); do only quick things yourself. ' +
+            'If whoever gave you this said who should do which part, do it that way.' : 'Do quick things yourself instead of creating tasks for them.') : ''),
     p ? `Project: ${p.name}\n${p.description}` +
       // ponytail: only the newest 10k characters of memory reach Claude; trim the file by hand if it ever gets that long
       (memory ? `\n\nProject memory (what the team has learned; the owner reads it to catch misunderstandings):\n${memory.slice(-10000)}` : '') : '',
@@ -1033,7 +1046,7 @@ export const TOOLS = [
       rules: { type: 'string', description: 'Their individual rules (optional)' },
       reports_to: { type: 'string', description: 'Their boss: you (default), someone under you, or "owner" to report straight to the owner (only when the owner asks for that)' },
       model: { type: 'string', description: '"auto" (best): Orbit picks a model for each chat or task. Or one from "Models you can give work to" in your briefing' },
-      file_access: { type: 'string', enum: ACCESS_ORDER, description: 'read, edit or full; at most your own access' },
+      file_access: { type: 'string', enum: ACCESS_ORDER, description: 'read, edit, auto or full; at most your own access' },
     } },
     run(a, ctx) {
       const me = employee(ctx.employeeId), here = task(ctx.taskId);
@@ -1042,7 +1055,7 @@ export const TOOLS = [
       if (one('SELECT count(*) AS n FROM employees').n >= LIMITS.team) throw new Error(`The company is full (${LIMITS.team} people). The owner can make room in Settings.`);
       const boss = pickBoss(a.reports_to, me);
       const access = a.file_access || 'read';
-      if (!ACCESS_ORDER.includes(access)) throw new Error('file_access must be read, edit or full.');
+      if (!ACCESS_ORDER.includes(access)) throw new Error('file_access must be read, edit, auto or full.');
       if (ACCESS_ORDER.indexOf(access) > ACCESS_ORDER.indexOf(me.access))
         throw new Error(`You can't give more file access than you have ("${me.access}"). Hire them with "${me.access}"; the owner can raise it in Settings.`);
       // New hires never get to hire or change rules: only the owner grants those.
@@ -1110,7 +1123,7 @@ export const TOOLS = [
     },
   },
 ];
-const approvals = new Map(); // waiting for you: id -> request (+ resolve)
+export const approvals = new Map(); // waiting for you: id -> request (+ resolve)
 const APPROVAL_WAIT = 30 * 60 * 1000;
 let approvalSeq = 0;
 TOOLS.push({
@@ -1123,11 +1136,12 @@ TOOLS.push({
     const e = employee(ctx.employeeId), t = task(ctx.taskId);
     if (!e || !t) return no('This work has ended.');
     if (preApproved(e, ctx.cwd, a.tool_name, a.input)) return JSON.stringify({ behavior: 'allow', updatedInput: a.input });
-    const d = describe(e, ctx.cwd, a.tool_name, a.input);
-    // Their own words just before asking are the best "why".
-    const words = t.log.split('\n').filter((l) => l.trim() && !/^[→✋⏳]/.test(l)).slice(-3).join('\n').slice(-600) || d.reason ||
+    const d = describe(e, ctx.cwd, a.tool_name, a.input), plan = a.tool_name === 'ExitPlanMode';
+    // Their own words just before asking are the best "why" (a plan is its own why).
+    const words = plan ? '' : t.log.split('\n').filter((l) => l.trim() && !/^[→✋⏳]/.test(l)).slice(-3).join('\n').slice(-600) || d.reason ||
       (() => { const asked = one(`SELECT text FROM messages WHERE task_id = ? AND kind IN ('me', 'asker') ORDER BY id DESC LIMIT 1`, t.id)?.text || t.body;
         return asked ? `(They didn't explain. They're working on: "${asked.slice(0, 300)}${asked.length > 300 ? '…' : ''}")` : ''; })();
+    if (plan && d.reason) say(t.id, 'reply', e.name, d.reason); // the plan stays in the conversation
     const id = ++approvalSeq;
     appendLog(t.id, `⏳ Waiting for your OK: ${d.what.split('\n')[0].slice(0, 140)}\n`);
     const decision = await new Promise((resolve) => {
@@ -1136,23 +1150,28 @@ TOOLS.push({
         at: Date.now(), resolve: (x) => { clearTimeout(timer); resolve(x); } });
       phoneAsk(approvals.get(id)); // your phone can answer too
     });
-    return decision.allow ? JSON.stringify({ behavior: 'allow', updatedInput: a.input }) : no(decision.message);
+    if (!decision.allow) return no(decision.message);
+    if (!plan) return JSON.stringify({ behavior: 'allow', updatedInput: a.input });
+    setTask(t.id, { plan: 0 }); // plan approved: the rest of this turn, and the next ones, work as usual
+    return JSON.stringify({ behavior: 'allow', updatedInput: a.input, updatedPermissions: [{ type: 'setMode', mode: ctx.mode, destination: 'session' }] });
   },
 });
 
-function decide(id, allow, always, message = 'The owner said no. Don\'t try that again; find another way, or explain what you need.') {
+export function decide(id, allow, always, message) {
   const ap = approvals.get(id);
   if (!ap) throw new Error('That request is no longer waiting. The work may have stopped.');
+  message ??= ap.tool === 'ExitPlanMode' ? "The owner hasn't approved this plan. Stop here without changing anything; they'll reply with what to change."
+    : 'The owner said no. Don\'t try that again; find another way, or explain what you need.';
   approvals.delete(id);
   const e = employee(ap.employeeId);
-  if (allow && always && e) {
+  if (allow && always && ap.always && e) {
     const a = allowOf(e);
     if (ap.always.kind === 'access') exec("UPDATE employees SET access = 'edit' WHERE id = ? AND access = 'read'", e.id);
     if (ap.always.kind === 'dir' && !a.dirs.includes(ap.always.dir)) a.dirs.push(ap.always.dir);
     if (ap.always.kind === 'rule' && !a.rules.includes(ap.always.rule)) a.rules.push(ap.always.rule);
     exec('UPDATE employees SET allow = ? WHERE id = ?', JSON.stringify(a), e.id);
   }
-  if (task(ap.taskId)) say(ap.taskId, 'note', 'me', allow ? `You allowed ${e?.name ?? 'them'}: ${ap.what.split('\n')[0]}${always ? ` (from now on: ${ap.always.label.replace(/^\w/, (c) => c.toLowerCase())})` : ''}`
+  if (task(ap.taskId)) say(ap.taskId, 'note', 'me', allow ? `You allowed ${e?.name ?? 'them'}: ${ap.what.split('\n')[0]}${always && ap.always ? ` (from now on: ${ap.always.label.replace(/^\w/, (c) => c.toLowerCase())})` : ''}`
     : `${message.startsWith('No answer') ? 'Nobody answered' : 'You said no to'} ${e?.name ?? 'them'}: ${ap.what.split('\n')[0]}`);
   ap.resolve(allow ? { allow: true } : { allow: false, message });
 }
@@ -1349,7 +1368,7 @@ function spawnEngine(engine, e, cwd, { model, effort, brief, prompt, secret, dir
   for (const k of ['ANTHROPIC_API_KEY', 'CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT']) delete env[k];
   const id = modelId(model);
   if (engine === 'gemini') { // no popups: what their access doesn't allow is turned down
-    const access = { read: [], edit: ['--mode', 'accept-edits'], full: ['--dangerously-skip-permissions'] }[e.access] ?? [];
+    const access = { read: [], edit: ['--mode', 'accept-edits'], full: ['--dangerously-skip-permissions'] }[otherAccess(e)] ?? [];
     const child = startBin(findBin('agy'), ['--output-format', 'stream-json', ...(id ? ['--model', id] : []), ...access, // its models carry their own effort (Low, Medium, High)
       ...(resume ? ['--conversation', resume] : []), ...dirs.flatMap((d) => ['--add-dir', d])], { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
     child.stdin.on('error', () => {});
@@ -1357,7 +1376,7 @@ function spawnEngine(engine, e, cwd, { model, effort, brief, prompt, secret, dir
     return child;
   }
   const toml = (s) => JSON.stringify(String(s)); // a TOML string
-  const sandbox = { read: 'read-only', edit: 'workspace-write', full: 'danger-full-access' }[e.access] ?? 'read-only';
+  const sandbox = { read: 'read-only', edit: 'workspace-write', full: 'danger-full-access' }[otherAccess(e)] ?? 'read-only';
   const args = ['exec', '--json', '--skip-git-repo-check', '-C', cwd, ...(id ? ['-m', id] : []), '--sandbox', sandbox, ...dirs.flatMap((d) => ['--add-dir', d]),
     '-c', 'approval_policy="never"', ...(brief ? ['-c', `developer_instructions=${toml(brief)}`] : []),
     ...(secret ? ['-c', `mcp_servers.crew.url=${toml(`http://localhost:${PORT}/mcp`)}`, '-c', 'mcp_servers.crew.bearer_token_env_var="ORBIT_MCP_TOKEN"', '-c', 'mcp_servers.crew.default_tools_approval_mode="approve"'] : []),
@@ -1491,7 +1510,7 @@ function run(t, e) {
   const cwd = expand(t.folder || p?.folder || e.folder);
   fs.mkdirSync(cwd, { recursive: true });
   const secret = crypto.randomUUID();
-  runs.set(secret, { taskId: t.id, employeeId: e.id, created: 0, hired: 0, cwd });
+  runs.set(secret, { taskId: t.id, employeeId: e.id, created: 0, hired: 0, cwd, mode: modeOf(e, model) }); // mode: what they work in once you approve a plan
   const tools = JSON.stringify({ mcpServers: { crew: { type: 'http', url: `http://localhost:${PORT}/mcp`, headers: { Authorization: `Bearer ${secret}` } } } });
   const { rules } = allowOf(e);
   const uploads = all('SELECT attachments FROM messages WHERE task_id = ? AND attachments IS NOT NULL', t.id).flatMap(attachmentsOf).filter((f) => f.how === 'upload').map((f) => path.dirname(f.path));
@@ -1502,15 +1521,19 @@ function run(t, e) {
   fs.writeFileSync(brief, systemPrompt(e, t, cwd, engine));
   setTask(t.id, { status: 'working', next_prompt: null, log: '' }); // log = what they do during this turn
   // Switched to a model on another engine: it can't open the old conversation, so it gets what was said so far.
-  const resume = sessionFor(t, engine), prompt = t.session_id && !resume ? handoff(t) + t.next_prompt : t.next_prompt;
+  const resume = sessionFor(t, engine), said = t.session_id && !resume ? handoff(t) + t.next_prompt : t.next_prompt;
+  // Plan first: Claude's plan mode shows you the plan as a request for your OK. Other engines can't ask mid-turn, so they
+  // reply with a plan, read only, and your next message is the go-ahead.
+  const otherPlan = t.plan && engine !== 'claude', prompt = otherPlan ? `${PLAN_FIRST}\n\n${said}` : said;
+  if (otherPlan) setTask(t.id, { plan: 0 });
   let child;
   if (engine === 'claude') {
-    const args = ['--append-system-prompt-file', brief, '--mcp-config', tools, ...ACCESS[e.access], ...(permsOf(e).chrome ? ['--chrome'] : []),
+    const args = ['--append-system-prompt-file', brief, '--mcp-config', tools, '--permission-mode', t.plan ? 'plan' : modeOf(e, model), ...(permsOf(e).chrome ? ['--chrome'] : []),
       '--allowedTools', ...READ_TOOLS, ...rules, ...(dirs.length ? ['--add-dir', ...dirs] : []),
       '--permission-prompts', 'host', '--permission-prompt-tool', 'mcp__crew__permission_prompt']; // anything else asks you
     if (resume) args.push('--resume', resume);
     child = claude(e, cwd, args, prompt, model, effortFor(t, e));
-  } else child = spawnEngine(engine, e, cwd, { model, effort: effortFor(t, e), brief: fs.readFileSync(brief, 'utf8'), prompt, secret, dirs, resume });
+  } else child = spawnEngine(engine, otherPlan ? { ...e, access: 'read' } : e, cwd, { model, effort: effortFor(t, e), brief: fs.readFileSync(brief, 'utf8'), prompt, secret, dirs, resume });
   child.on('close', () => fs.rmSync(brief, { force: true }));
   child.startedAt = Date.now(); // for the Live page: how long this turn has run
   running.set(t.id, child);
@@ -1850,6 +1873,18 @@ async function autoPicture(id) {
   } finally { drawing.delete(id); }
 }
 const bgFile = () => { try { return fs.readdirSync(BG_DIR).find((f) => /^background\.(jpg|png|webp)$/.test(f)); } catch { return null; } };
+
+// ---------- the page: the desktop one (index.html), or on a phone the mobile one (mobile.html) ----------
+// You can switch on either page; your choice is kept in the orbit_view cookie. iPads get the desktop page.
+const PHONE_UA = /iPhone|iPod|Android.+Mobile|Mobile.+Firefox|Windows Phone/i;
+function pageFor(req) {
+  const view = String(req.headers.cookie ?? '').match(/(?:^|;\s*)orbit_view=(mobile|desktop)/)?.[1];
+  const desktop = fs.readFileSync(path.join(DIR, 'index.html'), 'utf8');
+  if (view === 'desktop' || (!view && !PHONE_UA.test(String(req.headers['user-agent'] ?? '')))) return desktop;
+  // The mobile page shows replies with the desktop page's own Markdown code (it escapes everything first), so the two never drift apart.
+  const markdown = desktop.slice(desktop.indexOf('// ---------- markdown: what the team writes'), desktop.indexOf('// ---------- end markdown ----------'));
+  return fs.readFileSync(path.join(DIR, 'mobile.html'), 'utf8').replace('/*ORBIT_MARKDOWN*/', () => markdown);
+}
 
 // ---------- your phone: Orbit through a web link (with a password), and chatting from Telegram or WhatsApp ----------
 const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
@@ -2311,6 +2346,11 @@ function saveEmployee(b, id, { picture = true } = {}) { // picture: draw one for
 async function saveProject(b, id) {
   const name = String(b.name || '').trim(), description = String(b.description || '').trim();
   if (!name || name.length > 60) throw new Error('Give the project a name (up to 60 characters).');
+  if (!id && one('SELECT 1 FROM projects WHERE name = ?', name)) throw new Error(`You already have a project called ${name}.`);
+  if (b.newFolder && !String(b.folder ?? '').trim()) { // made on a phone: a new folder of its own, ~/Orbit Projects/<name>, which you can change on the desktop
+    b.folder = `~/Orbit Projects/${name.replace(/[\\/:*?"<>|]+/g, '-').replace(/^\.+/, '').trim() || 'Project'}`;
+    fs.mkdirSync(expand(b.folder), { recursive: true });
+  }
   const folder = await checkFolder(b.folder);
   try {
     if (id) {
@@ -2329,17 +2369,19 @@ async function saveProject(b, id) {
 // ---------- HTTP ----------
 const OPEN = "('queued','working','waiting')";
 const routes = {
-  'GET /api/state': () => ({
+  'GET /api/state': (_, b) => ({
     settings: { main_engine: mainEngine(), default_model: setting('default_model'), default_effort: setting('default_effort'), owner_name: setting('owner_name'), owner_avatar: setting('owner_avatar'),
       main_assistant: Number(setting('main_assistant')) || null, picture_cost: Number(setting('picture_cost')) || 0, appearance: cleanAppearance(JSON.parse(setting('appearance') || '{}')) },
     perms: PERMS,
     styles: Object.fromEntries(Object.entries(STYLES).map(([k, [label, blurb]]) => [k, { label, blurb }])),
     models: availableModels(), // Claude's, plus the engines you switched on
-    employees: all('SELECT * FROM employees ORDER BY name').map((e) => ({ ...e, perms: permsOf(e), allow: allowOf(e), skills: skillsOf(e), drawing: drawing.has(e.id) })),
+    employees: all('SELECT * FROM employees ORDER BY name').map((e) => (b.lite // the phone: just what it shows, to spare mobile data
+      ? { id: e.id, name: e.name, title: e.title, role: e.role.slice(0, 400), avatar: e.avatar, archived_at: e.archived_at, hidden: e.hidden, model: e.model, effort: e.effort, drawing: drawing.has(e.id) }
+      : { ...e, perms: permsOf(e), allow: allowOf(e), skills: skillsOf(e), drawing: drawing.has(e.id) })),
     approvals: [...approvals.values()].map(({ resolve, ...ap }) => ap),
     projects: all('SELECT * FROM projects ORDER BY name'),
     schedules: all('SELECT * FROM schedules ORDER BY paused, next_run'),
-    tasks: all(`SELECT id, kind, title, employee_id, project_id, parent_id, created_by, schedule_id, model, effort, status, cost, created_at, updated_at, archived_at,
+    tasks: all(`SELECT id, kind, title, employee_id, project_id, parent_id, created_by, schedule_id, model, effort, plan, status, cost, created_at, updated_at, archived_at,
       (SELECT substr(text, 1, 160) FROM messages m WHERE m.task_id = tasks.id AND m.kind NOT IN ('note', 'memory') ORDER BY m.id DESC LIMIT 1) AS last,
       (SELECT m.questions IS NOT NULL FROM messages m WHERE m.task_id = tasks.id AND m.kind NOT IN ('note', 'memory') ORDER BY m.id DESC LIMIT 1) AS asking,
       CASE WHEN status = 'working' THEN substr(log, -400) END AS tail
@@ -2364,6 +2406,7 @@ const routes = {
       description: message, project_id: Number(b.project_id) || null, folder: b.folder, attachments: files });
     if (b.model) setTask(id, { model: b.model });
     if (b.effort) setTask(id, { effort: b.effort });
+    if (b.plan) setTask(id, { plan: 1 });
     return { id };
   },
   'POST /api/tasks': (_, b) => {
@@ -2391,7 +2434,7 @@ const routes = {
     if (b.model && !modelOk(b.model)) throw new Error('Pick a model.');
     if (b.effort && !EFFORTS.includes(b.effort)) throw new Error('Pick an effort level.');
     setTask(t.id, { title, body: description, project_id, // the next turn uses a new model or effort
-      model: b.model === undefined ? t.model : b.model || null, effort: b.effort === undefined ? t.effort : b.effort || null });
+      model: b.model === undefined ? t.model : b.model || null, effort: b.effort === undefined ? t.effort : b.effort || null, plan: b.plan === undefined ? t.plan : b.plan ? 1 : 0 });
     if (employee_id === t.employee_id || t.kind === 'chat') return;
     if (!employee_id) return setTask(t.id, { employee_id: 0, status: 'todo', session_id: null, next_prompt: null });
     say(t.id, 'note', 'me', `Assigned to ${nameOf(employee_id)}`);
@@ -2405,6 +2448,7 @@ const routes = {
     if (!text && !files.length) throw new Error('Write a message first.');
     notArchived(employee(t.employee_id), project(t.project_id));
     if (t.archived_at) archive('chat', t.id, false); // writing in an archived chat brings it back
+    if (b.plan !== undefined) setTask(t.id, { plan: b.plan ? 1 : 0 });
     sendMessage(t, text || 'Please look at the files I attached.', files);
     if (b.interrupt && running.has(t.id)) { interrupting.add(t.id); running.get(t.id).kill('SIGTERM'); } // stop this turn; the message goes in now
   },
@@ -2457,6 +2501,10 @@ const routes = {
     exec('UPDATE employees SET hidden = ? WHERE id = ?', b.hidden ? 1 : 0, id);
   },
   'GET /api/employees/:id/notes': (_, b, id) => ({ notes: employee(id) ? readFile(notesFile(employee(id).name)) : '' }),
+  'POST /api/employees/access': (_, b) => { // one access level for the whole team
+    if (!ACCESS[b.access]) throw new Error('Pick a file access level.');
+    exec('UPDATE employees SET access = ? WHERE archived_at IS NULL', b.access);
+  },
   'PUT /api/employees/:id': (_, b, id) => { if (!employee(id)) throw new Error('No such employee.'); return saveEmployee(b, id); },
   'GET /api/skills': () => findSkills().map(({ dir, ...x }) => (x.mine ? { ...x, ...readSkillMd(fs.readFileSync(path.join(dir, 'SKILL.md'), 'utf8')), name: x.name } : x)),
   'POST /api/skills': (_, b) => saveSkill(b),
@@ -2746,7 +2794,7 @@ if (import.meta.main) http.createServer(async (req, res) => {
   if (url.pathname === '/mcp') return serveTools(req, res);
   if (req.method !== 'GET' && !String(req.headers['content-type']).startsWith('application/json'))
     return send(415, { error: 'JSON only' });
-  if (req.method === 'GET' && url.pathname === '/') return send(200, fs.readFileSync(path.join(DIR, 'index.html')), 'text/html');
+  if (req.method === 'GET' && url.pathname === '/') return send(200, pageFor(req), 'text/html');
   // Installable app: the manifest, icons, offline page and its service worker live with the code, in brand/.
   const APP_FILES = { '/manifest.webmanifest': 'manifest.webmanifest', '/sw.js': 'sw.js', '/offline.html': 'offline.html' };
   if (req.method === 'GET' && (APP_FILES[url.pathname] || /^\/icons\/[\w-]+\.(png|svg)$/.test(url.pathname))) {
@@ -2816,7 +2864,12 @@ if (import.meta.main) http.createServer(async (req, res) => {
     if (url.pathname.startsWith('/api/tasks/') && !t) return send(404, { error: 'No such task.' });
     const out = await handler(t, body, id, req);
     if (req.method !== 'GET') pump();
-    send(200, out);
+    if (req.method !== 'GET') return send(200, out);
+    // Unchanged since the page last asked? Say so instead of sending it all again (pages ask every few seconds; this spares mobile data).
+    const json = JSON.stringify(out ?? { ok: true }), tag = `"${crypto.createHash('sha1').update(json).digest('base64url').slice(0, 20)}"`;
+    if (req.headers['if-none-match'] === tag) { res.writeHead(304, { ETag: tag, 'Cache-Control': 'no-cache' }); return res.end(); }
+    res.writeHead(200, { 'Content-Type': 'application/json', 'X-Content-Type-Options': 'nosniff', ETag: tag, 'Cache-Control': 'no-cache' });
+    res.end(json);
   } catch (err) {
     send(400, { error: err.message });
   }

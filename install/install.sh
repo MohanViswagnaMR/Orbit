@@ -68,7 +68,7 @@ fi
 # 3. Copy the app to its own folder (so it runs no matter where you downloaded it)
 mkdir -p "$APP" "$DATA"
 if [ "$SRC" != "$APP" ]; then
-  cp "$SRC/server.js" "$SRC/index.html" "$SRC/backup.mjs" "$SRC/mcp-bridge.mjs" "$SRC/package.json" "$APP/"
+  cp "$SRC/server.js" "$SRC/index.html" "$SRC/mobile.html" "$SRC/backup.mjs" "$SRC/mcp-bridge.mjs" "$SRC/package.json" "$APP/"
   rm -rf "$APP/brand" && cp -R "$SRC/brand" "$APP/brand"
   rm -rf "$APP/skills" && cp -R "$SRC/skills" "$APP/skills" # Orbit's core skills
   [ -f "$SRC/README.md" ] && cp "$SRC/README.md" "$APP/"

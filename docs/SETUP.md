@@ -172,6 +172,8 @@ Whichever you use, **keep your computer on and awake**: your team runs there. On
 
 #### The web link: the whole of Orbit, anywhere
 
+On a phone, Orbit opens its **mobile version**: tabs at the bottom (Chats, Inbox, Live, Team, More), a big **+** for a new chat, one-tap **Allow** / **Don't allow** for requests, questions you answer by tapping, and photos or files from your phone as attachments. Settings, projects and skills are in the desktop version: **More → Desktop version** (and **Mobile version** at the top to come back).
+
 1. **Install cloudflared**, the free tool that makes the link. On a Mac, open Terminal and run `brew install cloudflared` (no Homebrew? get it from [brew.sh](https://brew.sh) first). Other systems: [Cloudflare's downloads](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/).
 2. **Choose a password**, at least 8 characters. You type it once on each phone.
 3. **Switch the web link on.** After a few seconds an address appears, like `https://some-words.trycloudflare.com`.
