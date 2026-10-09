@@ -1,7 +1,7 @@
 // Orbit's service worker. It does one thing: when Orbit's server isn't answering,
 // opening Orbit shows a friendly offline page instead of the browser's error.
 // Everything else goes straight to the server, untouched and uncached.
-const CACHE = 'orbit-offline-v1';
+const CACHE = 'orbit-offline-v2'; // v2: the offline page checks /health
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.add('/offline.html')).then(() => self.skipWaiting()));

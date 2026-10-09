@@ -130,7 +130,7 @@ if [ -n "$FRESH" ] && [ $# -gt 1 ]; then
   case "$N" in [1-9]) [ "$N" -le $# ] && eval "MAIN=\${$N}" ;; esac
   MAIN="${MAIN:-$1}"
 fi
-if command -v curl >/dev/null 2>&1 && curl -fs -o /dev/null "http://localhost:$PORT/api/state"; then
+if command -v curl >/dev/null 2>&1 && curl -fs -o /dev/null "http://localhost:$PORT/health"; then
   fail "Something else is already using port $PORT (maybe another copy of Orbit). Install with another port, e.g.  ORBIT_PORT=4400 bash install/install.sh"
 fi
 
@@ -209,11 +209,11 @@ fi
 # 6. Wait until it answers, then open it
 URL="http://localhost:$PORT"
 for _ in $(seq 1 40); do
-  if command -v curl >/dev/null 2>&1; then curl -fs -o /dev/null "$URL/api/state" && break
-  else node -e "fetch('$URL/api/state').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))" && break; fi
+  if command -v curl >/dev/null 2>&1; then curl -fs -o /dev/null "$URL/health" && break
+  else node -e "fetch('$URL/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))" && break; fi
   sleep 0.5
 done || true
-if command -v curl >/dev/null 2>&1 && ! curl -fs -o /dev/null "$URL/api/state"; then
+if command -v curl >/dev/null 2>&1 && ! curl -fs -o /dev/null "$URL/health"; then
   fail "Orbit didn't start. See $DATA/server.log for why, or ask for help with what it says."
 fi
 ok "Orbit is running at $URL"

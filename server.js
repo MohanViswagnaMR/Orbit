@@ -1,5 +1,7 @@
 // Orbit: your personal team of AI employees (on Claude, ChatGPT or Gemini). Runs on macOS, Windows and Linux. Start it with: node server.js
 import http from 'node:http';
+import https from 'node:https';
+import dns from 'node:dns';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -57,6 +59,7 @@ const ACCESS_ORDER = ['read', 'edit', 'full'];
 
 // ---------- database ----------
 fs.mkdirSync(DATA, { recursive: true });
+if (!WIN) try { fs.chmodSync(DATA, 0o700); } catch {} // only your account can open it: chats, keys and tokens are in here
 const db = new DatabaseSync(path.join(DATA, 'crew.db'));
 db.exec(`
 CREATE TABLE IF NOT EXISTS employees (
@@ -108,8 +111,13 @@ for (const sql of [
   'ALTER TABLE messages ADD COLUMN attachments TEXT', // JSON files you attached to a message: [{ path, name, size, how: 'upload' | 'file' }]
   'ALTER TABLE messages ADD COLUMN questions TEXT', // JSON questions a reply asks the owner (ask_owner), shown as a form
   'ALTER TABLE messages ADD COLUMN skills TEXT', // JSON names of the skills a reply used, shown under it
+  'ALTER TABLE tasks ADD COLUMN via TEXT', // 'telegram' or 'whatsapp': a chat you're having from your phone, so its replies go there too
 ]) try { db.exec(sql); } catch {}
 db.exec('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
+// Phones and browsers signed in through the web link: the hash of each one's cookie, and when it runs out.
+db.exec('CREATE TABLE IF NOT EXISTS sessions (hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL, label TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)');
+// label = the browser's own description; ip and place (JSON: city, region, country, from Cloudflare) as last seen; seen_at = last time it used Orbit.
+for (const sql of ['ALTER TABLE sessions ADD COLUMN ip TEXT', 'ALTER TABLE sessions ADD COLUMN place TEXT', 'ALTER TABLE sessions ADD COLUMN seen_at INTEGER']) try { db.exec(sql); } catch {}
 // employees.role holds the job description. employees.model may be 'default' (= the default model in Settings).
 // tasks.employee_id 0 = unassigned (the column was NOT NULL before unassigned tasks existed).
 // Task status: todo (unassigned) | queued | working | waiting (on subtasks) | review (needs you) | done | stopped | failed.
@@ -125,10 +133,12 @@ const setTask = (id, fields) => {
   exec(`UPDATE tasks SET ${keys.map((k) => `${k} = ?`).join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
     ...keys.map((k) => fields[k]), id);
 };
-const say = (taskId, kind, author, text, activity = '', { model = null, effort = null, files = null, questions = null, attachments = null, skills = null } = {}) =>
+const say = (taskId, kind, author, text, activity = '', { model = null, effort = null, files = null, questions = null, attachments = null, skills = null } = {}) => {
   exec('INSERT INTO messages (task_id, kind, author, text, activity, model, effort, files, questions, attachments, skills) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     taskId, kind, author, text, activity, model, effort, files?.length ? JSON.stringify(files) : null, questions?.length ? JSON.stringify(questions) : null,
     attachments?.length ? JSON.stringify(attachments) : null, skills?.length ? JSON.stringify(skills) : null);
+  if (kind === 'reply' || kind === 'note') phoneSaid(taskId, kind, author, text, questions); // a chat you're having from your phone hears it there too
+};
 const appendLog = (id, text) => exec('UPDATE tasks SET log = log || ? WHERE id = ?', text, id);
 const task = (id) => one('SELECT * FROM tasks WHERE id = ?', id);
 const employee = (id) => one('SELECT * FROM employees WHERE id = ?', id);
@@ -1124,6 +1134,7 @@ TOOLS.push({
       const timer = setTimeout(() => decide(id, false, false, 'No answer from the owner within 30 minutes. Carry on without it, or say what you need.'), APPROVAL_WAIT);
       approvals.set(id, { id, taskId: t.id, employeeId: e.id, title: t.title, kind: t.kind, tool: a.tool_name, ...d, why: [...new Set([d.reason, words].filter(Boolean))].join('\n\n'),
         at: Date.now(), resolve: (x) => { clearTimeout(timer); resolve(x); } });
+      phoneAsk(approvals.get(id)); // your phone can answer too
     });
     return decision.allow ? JSON.stringify({ behavior: 'allow', updatedInput: a.input }) : no(decision.message);
   },
@@ -1543,6 +1554,7 @@ function run(t, e) {
       say(t.id, 'note', e.name, `Failed: ${why}`, now.log.trim());
       setTask(t.id, { status: 'failed', result: `It failed: ${why.slice(0, 500)}` });
       if (!ownerReads(now)) deliverToParent(task(t.id)); // a teammate's subtask: whoever handed it out hears, and can move it up a model
+      else phoneFailed(now, e, why);
     } else finish(now, e, final.result || '', { model: x.model || Object.keys(final.modelUsage || {})[0] || null, effort: effortFor(t, e) || 'standard', files: [...changed], questions, skills: [...skillsUsed] });
     pump();
   };
@@ -1563,7 +1575,7 @@ function finish(t, e, text, stamp) {
   if (one(`SELECT count(*) AS n FROM tasks WHERE parent_id = ? AND reported = 0 AND status != 'done'`, t.id).n)
     return setTask(t.id, { status: 'waiting' }); // they handed parts out; their results bring this back
   if (now.next_prompt) return setTask(t.id, { status: 'queued' }); // you (or a finished subtask) sent something meanwhile
-  if (ownerReads(now)) return setTask(t.id, { status: 'review' });
+  if (ownerReads(now)) { phoneDone(now, e, text); return setTask(t.id, { status: 'review' }); }
   markDone(now, false); // a teammate's subtask: the result goes straight back to whoever asked
 }
 
@@ -1839,6 +1851,424 @@ async function autoPicture(id) {
 }
 const bgFile = () => { try { return fs.readdirSync(BG_DIR).find((f) => /^background\.(jpg|png|webp)$/.test(f)); } catch { return null; } };
 
+// ---------- your phone: Orbit through a web link (with a password), and chatting from Telegram or WhatsApp ----------
+const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
+const jsonSetting = (k) => { try { return JSON.parse(setting(k) || '{}') ?? {}; } catch { return {}; } };
+const saveJson = (k, v) => setSetting(k, JSON.stringify(v));
+
+// The password for opening Orbit away from this computer. Only its scrypt hash is kept.
+export const hashPassword = (pw, salt = crypto.randomBytes(16).toString('hex')) => `scrypt:${salt}:${crypto.scryptSync(String(pw), salt, 64).toString('hex')}`;
+export function passwordOk(pw, stored = setting('remote_password')) {
+  const [, salt, hash] = String(stored || '').split(':');
+  if (!salt || !hash || typeof pw !== 'string') return false;
+  const a = Buffer.from(hashPassword(pw, salt).split(':')[2], 'hex'), b = Buffer.from(hash, 'hex');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+// Signed-in phones and browsers: a random token in a cookie; Orbit keeps only its hash.
+const SESSION_DAYS = 30;
+const sha = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
+const cookieOf = (req, name) => String(req.headers.cookie ?? '').split(/;\s*/).find((c) => c.startsWith(`${name}=`))?.slice(name.length + 1);
+// Where a request comes from, as Cloudflare (or another tunnel) tells it: the address, and the place if Cloudflare adds it.
+const header = (req, k) => (req.headers[k] ? Buffer.from(String(req.headers[k]), 'latin1').toString('utf8').slice(0, 80) : ''); // Cloudflare sends city names as UTF-8
+const visitor = (req) => ({ ip: String(req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim().slice(0, 64),
+  place: JSON.stringify({ city: header(req, 'cf-ipcity'), region: header(req, 'cf-region'), country: header(req, 'cf-ipcountry') }) });
+// A signed-in phone or browser: its session (and a note of where it is now, at most once a minute), or null.
+function signedIn(req) {
+  const tok = cookieOf(req, 'orbit_session'), s = tok && one('SELECT * FROM sessions WHERE hash = ? AND expires_at > ?', sha(tok), Date.now());
+  if (s && Date.now() - (s.seen_at ?? 0) > 60e3) { const v = visitor(req); exec('UPDATE sessions SET seen_at = ?, ip = ?, place = ? WHERE hash = ?', Date.now(), v.ip, v.place, s.hash); }
+  return s || null;
+}
+// Wrong passwords: 5 from one place, or 20 from anywhere, in 15 minutes, and sign-in waits.
+const tries = new Map();
+const recentTries = (k) => (tries.get(k) ?? []).filter((x) => Date.now() - x < 15 * 60e3);
+const tooManyTries = (who) => recentTries(who).length >= 5 || recentTries('*').length >= 20;
+const wrongTry = (who) => { for (const k of [who, '*']) tries.set(k, [...recentTries(k), Date.now()]); };
+
+// The web link, while "Open Orbit from anywhere" is on. Three ways:
+// - a free Cloudflare address that Orbit opens; it changes when Orbit restarts, so Telegram gets the new one;
+// - your own domain on Cloudflare: a tunnel you make in Cloudflare's dashboard, which Orbit runs with its token (remote_tunnel_token);
+// - your own fixed address (an ngrok domain, a tunnel you run yourself): Orbit only needs to know it.
+let tunnel = null, tunnelUrl = '', tunnelError = '';
+const remoteOn = () => setting('remote_on') === '1';
+const tunnelToken = () => setting('remote_tunnel_token') || '';
+const publicUrl = () => (remoteOn() ? setting('remote_own_url') || tunnelUrl : '').replace(/\/+$/, '');
+// A tunnel token from Cloudflare (or a whole command with one in it): base64 JSON with the account, the tunnel and its secret.
+export function readTunnelToken(text) {
+  const tok = String(text ?? '').match(/eyJ[A-Za-z0-9+/_=-]{40,}/)?.[0];
+  try { const j = JSON.parse(Buffer.from(tok, 'base64').toString('utf8')); if (j.a && j.t && j.s) return tok; } catch {}
+  return null;
+}
+function startTunnel() {
+  const own = setting('remote_own_url'), token = tunnelToken();
+  if (tunnel || !remoteOn() || (own && !token)) return; // off, or a tunnel you run yourself
+  const bin = findBin('cloudflared');
+  if (!bin) return void (tunnelError = "cloudflared isn't installed. On a Mac: brew install cloudflared");
+  let child;
+  try { // the token goes in through the environment, so it doesn't show in the list of running programs
+    child = tunnel = startBin(bin, token ? ['tunnel', '--no-autoupdate', 'run'] : ['tunnel', '--url', `http://localhost:${PORT}`, '--no-autoupdate'],
+      { stdio: ['ignore', 'pipe', 'pipe'], env: token ? { ...process.env, TUNNEL_TOKEN: token } : process.env });
+  } catch (err) { return void (tunnelError = err.message); }
+  tunnelError = '';
+  const look = (d) => {
+    if (tunnel !== child) return;
+    const text = String(d), u = token ? (/Registered tunnel connection/.test(text) ? own : null) : text.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/)?.[0];
+    if (u && u !== tunnelUrl) { tunnelUrl = u; tunnelError = ''; linkChanged(); }
+    const bad = text.split('\n').find((l) => /token is not valid|Unauthorized|ERR /.test(l)), said = bad?.match(/error="([^"]+)"/)?.[1] ?? bad?.replace(/^\S+\s+ERR\s+/, '').trim();
+    if (bad && !tunnelUrl) tunnelError = /not valid/.test(bad) ? "That tunnel token isn't valid. Copy it again from your tunnel's page in Cloudflare."
+      : token ? `Cloudflare isn't letting the tunnel in yet. Check that the token is from your orbit tunnel (Zero Trust → Networks → Tunnels → orbit → Configure shows it again), that the tunnel still exists, and that this Mac is online. (Cloudflare said: ${said})`
+      : `The free link didn't open. (Cloudflare said: ${said})`;
+  };
+  child.stdout.on('data', look);
+  child.stderr.on('data', look);
+  child.on('error', (err) => (tunnelError = err.message));
+  child.on('close', () => {
+    if (tunnel !== child) return; // stopped on purpose
+    tunnel = null; tunnelUrl = '';
+    setTimeout(startTunnel, 15000); // it dropped: open it again
+  });
+}
+function stopTunnel() { const c = tunnel; tunnel = null; tunnelUrl = ''; c?.kill(); }
+// Can your phone reach Orbit at its address? Orbit asks through Cloudflare the way your phone would, looking the address up
+// with public DNS (your router may remember a new address as missing for a while), and says what's wrong if not.
+let reach = { url: '', at: 0, ok: null, why: '' };
+const publicDns = new dns.Resolver();
+publicDns.setServers(['1.1.1.1', '8.8.8.8']);
+const lookupPublic = (host, opts, cb) => publicDns.resolve4(host, (err, addrs) => (err ? cb(err)
+  : opts?.all ? cb(null, addrs.map((address) => ({ address, family: 4 }))) : cb(null, addrs[0], 4)));
+const status = (url) => new Promise((ok, no) => {
+  const req = https.get(`${url}/manifest.webmanifest`, { lookup: lookupPublic, timeout: 10000 }, (res) => { res.resume(); ok(res.statusCode); }); // the one file Orbit serves before sign-in
+  req.on('timeout', () => req.destroy(Object.assign(new Error('no answer within 10 seconds'), { code: 'ETIMEDOUT' })));
+  req.on('error', no);
+});
+async function checkReach() {
+  const url = publicUrl();
+  let ok = null, why = '';
+  if (url) {
+    const host = new URL(url).host;
+    try {
+      const code = await status(url);
+      ok = code >= 200 && code < 300;
+      if (!ok) why = code === 502 ? `Cloudflare reached your tunnel, but the tunnel can't reach Orbit. In Cloudflare, edit this address in your tunnel's routes (Public hostname) and set the service to type HTTP with URL localhost:${PORT}, not HTTPS.`
+        : code === 530 ? "Cloudflare knows this address, but no tunnel is running for it. Check that your tunnel is running (Zero Trust → Networks → Tunnels shows it as Healthy) and that this address belongs to it."
+        : code === 404 ? "Your tunnel answered, but it has no route for this address. Check the address in your tunnel's routes (Public hostname)."
+        : `Cloudflare answered with error ${code}.`;
+    } catch (err) {
+      ok = false;
+      why = ['ENOTFOUND', 'ENODATA'].includes(err.code) ? `${host} doesn't exist yet. Check that your tunnel has a route for it (Public hostname) in Cloudflare.` : `Couldn't reach ${url} (${err.code || err.message}).`;
+    }
+    // Worth knowing: this Mac's own lookup may still say "no such address" for a while, even when phones can open it.
+    if (ok && !(await dns.promises.lookup(host).then(() => true, () => false))) why = "Works for your phone. This Mac can't open it yet: your router still remembers the address as missing (it clears up by itself).";
+  }
+  return (reach = { url, at: Date.now(), ok, why });
+}
+function linkChanged() {
+  const url = publicUrl();
+  if (!url) return;
+  if (!setting('remote_own_url') && phoneReady('telegram')) toPhone('telegram', `🔗 Your Orbit link: ${url}`); // only the free link changes
+  waSubscribe();
+}
+
+// Requests through the web link. Answers the sign-in page, WhatsApp's own calls and "sign in first";
+// returns false when a signed-in request should carry on as usual.
+// local: a request on this computer while "Ask for the password on this computer too" is on.
+async function fromOutside(req, res, url, send, local = false) {
+  if (!local && url.pathname === '/hooks/whatsapp') return whatsAppHook(req, res, url), true;
+  if (url.pathname === '/mcp') return send(403, { error: 'Forbidden' }), true; // employees' tools are for this computer only
+  if (req.method !== 'GET' && req.headers.origin && req.headers.origin !== (local ? `http://${req.headers.host}` : publicUrl())) return send(403, { error: 'Forbidden origin' }), true;
+  const secure = local ? '' : ' Secure;'; // this computer's page is plain http://localhost
+  if (req.method === 'POST' && url.pathname === '/api/login') {
+    const who = local ? 'this computer' : String(req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || '?').split(',')[0].trim();
+    let raw = '';
+    for await (const chunk of req) if ((raw += chunk).length > 4000) break;
+    if (tooManyTries(who)) return send(429, { error: 'Too many wrong passwords. Wait 15 minutes, then try again.' }), true;
+    let pw;
+    try { pw = JSON.parse(raw).password; } catch {}
+    if (!passwordOk(pw)) { wrongTry(who); await sleep(800); return send(401, { error: 'Wrong password.' }), true; }
+    const tok = crypto.randomBytes(32).toString('hex');
+    const v = visitor(req);
+    exec('INSERT INTO sessions (hash, expires_at, label, ip, place, seen_at) VALUES (?, ?, ?, ?, ?, ?)', sha(tok), Date.now() + SESSION_DAYS * 864e5, String(req.headers['user-agent'] ?? '').slice(0, 300), v.ip, v.place, Date.now());
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Set-Cookie': `orbit_session=${tok}; Path=/; HttpOnly;${secure} SameSite=Lax; Max-Age=${SESSION_DAYS * 86400}` });
+    return res.end('{"ok":true}'), true;
+  }
+  const session = signedIn(req);
+  if (session) {
+    req.orbitSession = session.hash; // so Settings → Phone can mark "This device"
+    if (req.method === 'POST' && url.pathname === '/api/logout') {
+      exec('DELETE FROM sessions WHERE hash = ?', sha(cookieOf(req, 'orbit_session')));
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Set-Cookie': `orbit_session=; Path=/; HttpOnly;${secure} SameSite=Lax; Max-Age=0` });
+      return res.end('{"ok":true}'), true;
+    }
+    // The password, the link and the chat apps are changed on this computer only, so a lost phone can't lock you out or hand them on.
+    if (!local && req.method !== 'GET' && url.pathname.startsWith('/api/remote')) return send(403, { error: 'Change these settings on the computer Orbit runs on.' }), true;
+    return false;
+  }
+  if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/login')) {
+    res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store', 'X-Frame-Options': 'DENY', 'Content-Security-Policy': "frame-ancestors 'none'" });
+    return res.end(fs.readFileSync(path.join(DIR, 'brand', 'login.html'))), true;
+  }
+  if (req.method === 'GET' && /^\/(manifest\.webmanifest|sw\.js|offline\.html|icons\/[\w-]+\.(png|svg))$/.test(url.pathname)) return false; // the app icon and offline page
+  return send(401, { error: 'Sign in first.' }), true;
+}
+
+// ---- chatting from your phone: what Telegram and WhatsApp share ----
+const PHONES = ['telegram', 'whatsapp'];
+const tg = () => jsonSetting('telegram'); // { token, bot, chat, name, on, code, codeUntil }
+const wa = () => jsonSetting('whatsapp'); // { phoneId, token, appId, appSecret, verify, owner, on, code, codeUntil }
+const phoneError = { telegram: '', whatsapp: '' };
+export const phoneReady = (ch) => (ch === 'telegram' ? !!(tg().token && tg().chat && tg().on !== false) : !!(wa().token && wa().phoneId && wa().owner && wa().on !== false));
+function toPhone(ch, text, buttons = []) {
+  return (ch === 'telegram' ? tgSend : waSend)(text, buttons).then(() => (phoneError[ch] = ''), (err) => (phoneError[ch] = err.message));
+}
+const toPhones = (text, buttons) => { for (const ch of PHONES) if (phoneReady(ch)) toPhone(ch, text, buttons); };
+const PHONE_HELP = [
+  'Write to your main assistant like in Orbit. Your messages go to the same chat until you start a new one.',
+  '@Name message: start a chat with someone else',
+  '/new: start a new chat (/new message starts it now)',
+  '/chats: your recent chats; /open 2 switches to one',
+  '/team: who is on your team',
+  '/status: what is running, and what waits for you',
+  '/stop: stop the current reply',
+  '/link: the web link to open Orbit itself',
+].join('\n');
+const phoneChat = (ch) => { const t = task(Number(jsonSetting('phone_chats')[ch])); return t && t.kind === 'chat' && !t.archived_at && !employee(t.employee_id)?.archived_at ? t : null; };
+const setPhoneChat = (ch, id) => saveJson('phone_chats', { ...jsonSetting('phone_chats'), [ch]: id });
+const recentChats = () => all("SELECT * FROM tasks WHERE kind = 'chat' AND archived_at IS NULL ORDER BY updated_at DESC LIMIT 8");
+
+// A message from your phone. Plain text goes to the chat you're in; a few /commands do the rest.
+export async function fromPhone(ch, raw) {
+  const text = String(raw ?? '').trim(), reply = (m, b) => toPhone(ch, m, b);
+  if (!text) return;
+  const start = (e, msg) => {
+    if (!e) return reply('Pick a main assistant in Orbit first (Settings → General), or write to someone with @Name.');
+    const id = createTask({ kind: 'chat', employee_id: e.id, title: shortTitle(msg), description: msg });
+    setTask(id, { via: ch });
+    setPhoneChat(ch, id);
+    pump();
+  };
+  const main = () => { const e = employee(Number(setting('main_assistant'))); return e && !e.archived_at ? e : null; };
+  const [word] = text.split(/\s+/), arg = text.slice(word.length).trim(), cur = phoneChat(ch);
+  switch (word.toLowerCase().replace(/@\w+$/, '')) { // Telegram may add the bot's name: /new@my_orbit_bot
+    case '/start': case '/help': return reply(PHONE_HELP);
+    case '/new': setPhoneChat(ch, 0); return arg ? start(main(), arg) : reply(`OK. Your next message starts a new chat${main() ? ` with ${main().name}` : ''}.`);
+    case '/team': return reply(all('SELECT * FROM employees WHERE archived_at IS NULL ORDER BY name').map((e) => `**${e.name}**${e.title ? `, ${e.title}` : ''}`).join('\n') || 'No one on your team yet.');
+    case '/chats': {
+      const list = recentChats();
+      return reply(list.length ? list.map((t, i) => `${i + 1}. ${t.id === cur?.id ? '▶ ' : ''}**${nameOf(t.employee_id)}**: ${t.title}`).join('\n') + '\n\n/open 2 switches to the second one.' : 'No chats yet.');
+    }
+    case '/open': {
+      const t = recentChats()[Number(arg) - 1];
+      if (!t) return reply('Which one? /chats lists them; then /open 1, /open 2…');
+      setPhoneChat(ch, t.id);
+      const last = one("SELECT author, text FROM messages WHERE task_id = ? AND kind = 'reply' ORDER BY id DESC LIMIT 1", t.id);
+      return reply(`Now in “${t.title}” with ${nameOf(t.employee_id)}.${last ? `\n\nLast reply:\n${last.text.slice(0, 1500)}` : ''}`);
+    }
+    case '/status': {
+      const busy = all("SELECT * FROM tasks WHERE status IN ('working', 'queued') AND archived_at IS NULL"), review = all("SELECT * FROM tasks WHERE status = 'review' AND archived_at IS NULL");
+      return reply([busy.length ? `Working on:\n${busy.map((t) => `• ${nameOf(t.employee_id)}: ${t.title}`).join('\n')}` : 'Nobody is working right now.',
+        approvals.size ? `${approvals.size} waiting for your OK.` : '', review.length ? `Ready for you to check:\n${review.map((t) => `• ${t.title}`).join('\n')}` : ''].filter(Boolean).join('\n\n'));
+    }
+    case '/stop':
+      if (!cur || !['working', 'queued'].includes(cur.status)) return reply('Nothing is running in this chat.');
+      stop(cur);
+      return reply('Stopped.');
+    case '/link': return reply(publicUrl() ? `Open Orbit: ${publicUrl()}` : 'The web link is off. Switch it on in Orbit: Settings → Phone.');
+  }
+  const to = text.match(/^@([\w-]+)\s+([\s\S]+)$/);
+  if (to) { const e = findEmployee(to[1]); return e ? start(e, to[2]) : reply(`No one called ${to[1]} on your team. /team lists everyone.`); }
+  if (!cur) return start(main(), text);
+  sendMessage(cur, text);
+  setTask(cur.id, { via: ch });
+  pump();
+}
+// A tapped button: allow or refuse a request, answer a question, or mark a task done. Returns what to show.
+export async function onButton(ch, data) {
+  const [kind, a, b] = String(data).split(':');
+  try {
+    if (kind === 'ap') { decide(Number(a), b === '1', false); return b === '1' ? '✓ Allowed' : '✗ Said no'; }
+    const t = task(Number(a));
+    if (!t) throw new Error('That chat or task is gone.');
+    if (kind === 'qa') {
+      const q = JSON.parse(one('SELECT questions FROM messages WHERE task_id = ? AND questions IS NOT NULL ORDER BY id DESC LIMIT 1', t.id)?.questions || '[]')[0];
+      const label = q?.options?.[Number(b)]?.label;
+      if (!label) throw new Error('That question has passed.');
+      sendMessage(t, label);
+      setTask(t.id, { via: ch });
+      if (t.kind === 'chat') setPhoneChat(ch, t.id);
+      pump();
+      return `Answered: ${label}`;
+    }
+    if (kind === 'done') { routes['POST /api/tasks/:id/done'](t); pump(); return `✓ Marked “${t.title}” done`; }
+    throw new Error("Orbit doesn't know that button.");
+  } catch (err) { return err.message; }
+}
+// What your phone hears: replies in chats you're having from it (with their questions), and failures there.
+function phoneSaid(taskId, kind, author, text, questions) {
+  const t = task(taskId);
+  if (!t?.via || !phoneReady(t.via) || (kind === 'note' && !/^(Failed|Couldn't start)/.test(text))) return;
+  const qs = questions ?? [], many = qs.length > 1;
+  const ask = qs.map((q, i) => `${many ? `${i + 1}. ` : ''}**${q.question}**\n${q.options.map((o, j) => `${j + 1}) ${o.label}`).join('\n')}`).join('\n\n');
+  const buttons = qs.length === 1 && !qs[0].multi ? qs[0].options.map((o, j) => ({ label: o.label, data: `qa:${t.id}:${j}` })) : [];
+  toPhone(t.via, `**${author}**${kind === 'note' ? ' ⚠️' : ''}\n${text}${ask ? `\n\n${ask}${buttons.length ? '' : '\n\nReply with your answers.'}` : ''}`, buttons);
+}
+// And what waits for you anywhere: requests for your OK, and tasks that finished or failed.
+const phoneAsk = (ap) => toPhones(`🔐 **${nameOf(ap.employeeId)}** needs your OK${ap.kind === 'task' ? ` (task “${ap.title}”)` : ''}:\n${String(ap.what).split('\n')[0].slice(0, 300)}` +
+  `${ap.why ? `\n\n${String(ap.why).slice(0, 400)}` : ''}`, [{ label: 'Allow', data: `ap:${ap.id}:1` }, { label: 'Say no', data: `ap:${ap.id}:0` }]);
+const phoneDone = (t, e, text) => t.kind === 'task' && !t.via && toPhones(`✅ **${e.name}** finished “${t.title}”\n\n${text.slice(0, 1500)}`, [{ label: 'Mark done', data: `done:${t.id}` }]);
+const phoneFailed = (t, e, why) => t.kind === 'task' && toPhones(`⚠️ **${e.name}**'s task “${t.title}” failed:\n${why.slice(0, 600)}`);
+
+// Long messages in pieces, at paragraph breaks where possible.
+export function chunks(text, max) {
+  const out = [];
+  let rest = String(text);
+  while (rest.length > max) {
+    let cut = rest.lastIndexOf('\n\n', max);
+    if (cut < max / 2) cut = rest.lastIndexOf('\n', max);
+    if (cut < max / 2) cut = max;
+    out.push(rest.slice(0, cut).trimEnd());
+    rest = rest.slice(cut).trimStart();
+  }
+  return [...out, rest];
+}
+
+// ---- Telegram: a bot you make with @BotFather. Orbit asks Telegram for new messages, so nothing on this computer is opened up. ----
+const TG_API = process.env.TELEGRAM_API || 'https://api.telegram.org';
+async function tgCall(method, body, token = tg().token) {
+  const r = await fetch(`${TG_API}/bot${token}/${method}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body ?? {}),
+    signal: AbortSignal.timeout(method === 'getUpdates' ? 70000 : 20000) });
+  const j = await r.json().catch(() => ({ ok: false, description: `Telegram answered ${r.status}` }));
+  if (!j.ok) throw Object.assign(new Error(j.description || 'Telegram said no'), { code: j.error_code });
+  return j.result;
+}
+// Telegram's formatting: bold, code and links from the replies' Markdown; everything else as plain text.
+export function tgHtml(md) {
+  const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return String(md).split('```').map((part, i) => (i % 2 ? `<pre>${esc(part.replace(/^[\w+-]*\n/, ''))}</pre>` : esc(part)
+    .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
+    .replace(/^#{1,6}\s+(.+)$/gm, '<b>$1</b>')
+    .replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2">$1</a>'))).join('');
+}
+async function tgSend(text, buttons = []) {
+  const chat = tg().chat, parts = chunks(text, 3500);
+  for (const [i, p] of parts.entries()) {
+    const keys = i === parts.length - 1 && buttons.length ? { reply_markup: { inline_keyboard: buttons.map((b) => [{ text: b.label.slice(0, 60), callback_data: b.data }]) } } : {};
+    await tgCall('sendMessage', { chat_id: chat, text: tgHtml(p), parse_mode: 'HTML', link_preview_options: { is_disabled: true }, ...keys })
+      .catch(() => tgCall('sendMessage', { chat_id: chat, text: p, link_preview_options: { is_disabled: true }, ...keys })); // its formatting didn't parse: plain
+  }
+}
+let tgRun = 0; // the current polling loop; a new token, or switching it off, ends the old one
+async function tgPoll() {
+  const me = ++tgRun;
+  let offset = Number(tg().offset) || 0; // how far Orbit has read, kept so a restart never handles a message twice
+  while (me === tgRun && tg().token && tg().on !== false) {
+    try {
+      const updates = await tgCall('getUpdates', { offset, timeout: 50, allowed_updates: ['message', 'callback_query'] });
+      for (const u of updates) {
+        offset = u.update_id + 1;
+        if (me !== tgRun) break;
+        saveJson('telegram', { ...tg(), offset });
+        await tgUpdate(u).catch((err) => (phoneError.telegram = err.message));
+      }
+    } catch (err) {
+      phoneError.telegram = err.code === 409 ? 'Another program is reading this bot (another copy of Orbit?). Only one can.' : err.message;
+      if (err.code === 401 || err.code === 404) break; // the token no longer works
+      await sleep(10000);
+    }
+  }
+}
+export async function tgUpdate(u) {
+  const c = tg(), m = u.message, q = u.callback_query, chat = String(m?.chat?.id ?? q?.message?.chat?.id ?? '');
+  if (!chat) return;
+  if (chat !== String(c.chat)) { // not your paired chat: only the pairing code from Settings → Phone gets in
+    const code = m?.text?.match(/^\/start\s+(\w+)$/)?.[1];
+    if (code && c.code && code === c.code && Date.now() < c.codeUntil && m.chat.type === 'private') {
+      saveJson('telegram', { ...c, chat, name: [m.from?.first_name, m.from?.last_name].filter(Boolean).join(' ') || m.from?.username || '', code: null, codeUntil: null });
+      return toPhone('telegram', `Hi! This chat is now paired with your Orbit.\n\n${PHONE_HELP}`);
+    }
+    if (m) await tgCall('sendMessage', { chat_id: chat, text: 'This is a private Orbit bot.' }).catch(() => {});
+    return;
+  }
+  if (q?.data === 'x') return tgCall('answerCallbackQuery', { callback_query_id: q.id }).catch(() => {}); // a button already used
+  if (q) {
+    const said = await onButton('telegram', q.data);
+    await tgCall('answerCallbackQuery', { callback_query_id: q.id, text: said.slice(0, 190) }).catch(() => {});
+    if (q.message) await tgCall('editMessageReplyMarkup', { chat_id: chat, message_id: q.message.message_id, reply_markup: { inline_keyboard: [[{ text: said.slice(0, 60), callback_data: 'x' }]] } }).catch(() => {});
+    return;
+  }
+  const text = m?.text ?? m?.caption;
+  if (!text) return toPhone('telegram', 'Orbit can only read text here for now. To send files, open the web link (/link).');
+  tgCall('sendChatAction', { chat_id: chat, action: 'typing' }).catch(() => {});
+  await fromPhone('telegram', text);
+}
+
+// ---- WhatsApp: Meta's official WhatsApp Cloud API, with your own Meta app and number. Messages arrive through the web link. ----
+const GRAPH = process.env.GRAPH_API || 'https://graph.facebook.com/v21.0';
+async function waCall(where, body) {
+  const r = await fetch(`${GRAPH}/${where}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${wa().token}` }, body: JSON.stringify(body), signal: AbortSignal.timeout(20000) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw Object.assign(new Error(j.error?.message || `WhatsApp answered ${r.status}`), { code: j.error?.code });
+  return j;
+}
+// WhatsApp's formatting: *bold*, ```code```; links as plain addresses.
+export const waText = (md) => String(md).replace(/\*\*([^*\n]+)\*\*/g, '*$1*').replace(/^#{1,6}\s+(.+)$/gm, '*$1*').replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g, '$1 ($2)');
+async function waSend(text, buttons = []) {
+  const c = wa(), msg = (body) => waCall(`${c.phoneId}/messages`, { messaging_product: 'whatsapp', recipient_type: 'individual', to: c.owner, ...body }).catch((err) => {
+    throw err.code === 131047 ? new Error("WhatsApp only lets Orbit write to you within 24 hours of your last message to it. Send it anything to open the window again.") : err;
+  });
+  const parts = chunks(waText(text), 3800), last = parts.at(-1);
+  for (const p of parts.slice(0, buttons.length && last.length <= 1000 ? -1 : undefined)) await msg({ type: 'text', text: { body: p, preview_url: false } });
+  if (!buttons.length) return;
+  const body = { text: last.length <= 1000 ? last : 'Choose:' }; // a message with buttons holds at most 1024 characters
+  await msg({ type: 'interactive', interactive: buttons.length <= 3
+    ? { type: 'button', body, action: { buttons: buttons.map((b) => ({ type: 'reply', reply: { id: b.data, title: b.label.slice(0, 20) } })) } }
+    : { type: 'list', body, action: { button: 'Choose', sections: [{ title: 'Options', rows: buttons.slice(0, 10).map((b) => ({ id: b.data, title: b.label.slice(0, 24) })) }] } } });
+}
+// Meta calls this through the web link: once to check the address (GET), then with each message (POST, signed with your app secret).
+async function whatsAppHook(req, res, url) {
+  const c = wa();
+  if (req.method === 'GET') {
+    const ok = url.searchParams.get('hub.mode') === 'subscribe' && !!c.verify && url.searchParams.get('hub.verify_token') === c.verify;
+    if (ok) saveJson('whatsapp', { ...c, hookedUrl: publicUrl() }); // Meta reached Orbit at this link
+    res.writeHead(ok ? 200 : 403, { 'Content-Type': 'text/plain' });
+    return res.end(ok ? String(url.searchParams.get('hub.challenge') ?? '') : 'No');
+  }
+  const bufs = [];
+  let size = 0;
+  for await (const chunk of req) { bufs.push(chunk); if ((size += chunk.length) > 1e6) break; }
+  const raw = Buffer.concat(bufs), sig = Buffer.from(String(req.headers['x-hub-signature-256'] ?? '')), want = Buffer.from(`sha256=${crypto.createHmac('sha256', String(c.appSecret ?? '')).update(raw).digest('hex')}`);
+  if (!c.appSecret || sig.length !== want.length || !crypto.timingSafeEqual(sig, want)) { res.writeHead(401); return res.end(); }
+  res.writeHead(200);
+  res.end(); // answer Meta straight away; the work happens after
+  let j;
+  try { j = JSON.parse(raw.toString('utf8')); } catch { return; }
+  for (const entry of j.entry ?? []) for (const change of entry.changes ?? []) for (const m of change.value?.messages ?? [])
+    await waMessage(m).catch((err) => (phoneError.whatsapp = err.message));
+}
+export async function waMessage(m) {
+  const c = wa();
+  if (m.from !== c.owner) { // only the pairing code gets in; strangers get no answer
+    const code = m.text?.body?.trim().match(/^orbit\s+(\w+)$/i)?.[1];
+    if (code && c.code && code === c.code && Date.now() < c.codeUntil) {
+      saveJson('whatsapp', { ...c, owner: m.from, code: null, codeUntil: null });
+      return toPhone('whatsapp', `Hi! This WhatsApp is now paired with your Orbit.\n\n${PHONE_HELP}`);
+    }
+    return;
+  }
+  const picked = m.interactive?.button_reply?.id ?? m.interactive?.list_reply?.id ?? m.button?.payload;
+  if (picked) return toPhone('whatsapp', await onButton('whatsapp', picked));
+  if (m.type !== 'text') return toPhone('whatsapp', 'Orbit can only read text here for now. To send files, open the web link (/link).');
+  await fromPhone('whatsapp', m.text?.body);
+}
+// Tell Meta where Orbit is: the free link changes when Orbit restarts, and a new address needs telling once (with your app ID and app secret).
+async function waSubscribe() {
+  const c = wa(), url = publicUrl();
+  if (!c.appId || !c.appSecret || !c.verify || !url || c.hookedUrl === url) return; // Meta already reached Orbit at this address
+  const q = new URLSearchParams({ object: 'whatsapp_business_account', callback_url: `${url}/hooks/whatsapp`, verify_token: c.verify, fields: 'messages', access_token: `${c.appId}|${c.appSecret}` });
+  const r = await fetch(`${GRAPH}/${c.appId}/subscriptions`, { method: 'POST', body: q, signal: AbortSignal.timeout(30000) }).catch(() => null);
+  const j = await r?.json().catch(() => ({}));
+  phoneError.whatsapp = r?.ok ? '' : `Couldn't give Meta Orbit's new link (${j?.error?.message ?? 'no answer'}). Paste ${url}/hooks/whatsapp into your Meta app's webhook settings.`;
+}
+
 // ---------- people and projects ----------
 function saveEmployee(b, id, { picture = true } = {}) { // picture: draw one for a new hire (not when they bring their own)
   const str = (k, max) => String(b[k] ?? '').trim().slice(0, max);
@@ -2066,6 +2496,88 @@ const routes = {
     setSetting('connectors', JSON.stringify(c));
     await checkEngines();
   },
+  // Settings → Phone: the web link and its password, and chatting from Telegram or WhatsApp. Secrets never come back to the page.
+  'GET /api/remote': async (_, b, __, req) => {
+    const t = tg(), w = wa(), url = publicUrl(), live = (c) => (c.code && Date.now() < c.codeUntil ? c.code : null);
+    exec('DELETE FROM sessions WHERE expires_at <= ?', Date.now()); // sign-ins that ran out
+    const stamp = (ms) => (ms ? new Date(ms).toISOString().slice(0, 19).replace('T', ' ') : null); // like the database's own times
+    const devices = all('SELECT * FROM sessions ORDER BY COALESCE(seen_at, 0) DESC').map((s) => {
+      let place = {};
+      try { place = JSON.parse(s.place || '{}'); } catch {}
+      return { id: s.hash.slice(0, 16), agent: s.label || '', ip: s.ip || '', place, signedIn: s.created_at, seen: stamp(s.seen_at), current: s.hash === req?.orbitSession };
+    });
+    if (b.check && url) await checkReach(); // "Check again"
+    else if (url && (reach.url !== url || Date.now() - reach.at > 30000)) checkReach(); // in the background; the page asks again in a few seconds
+    const own = setting('remote_own_url') || '', token = !!tunnelToken();
+    return { password: !!setting('remote_password'), on: remoteOn(), ownUrl: own, tunnelToken: token, url, error: tunnelError, localLock: setting('remote_local_lock') === '1',
+      reach: url && reach.url === url ? { ok: reach.ok, why: reach.why } : { ok: null, why: '' },
+      connected: remoteOn() && (own && !token ? null : !!tunnelUrl), starting: remoteOn() && (own ? token && !tunnelUrl && !tunnelError : !url),
+      cloudflared: !!findBin('cloudflared'), sessions: devices.length, devices,
+      telegram: { token: !!t.token, bot: t.bot ?? '', paired: !!t.chat, name: t.name ?? '', on: t.on !== false, code: live(t), error: phoneError.telegram, used: !!one("SELECT 1 FROM tasks WHERE via = 'telegram'") },
+      whatsapp: { phoneId: w.phoneId ?? '', appId: w.appId ?? '', token: !!w.token, secret: !!w.appSecret, paired: !!w.owner, owner: w.owner ? `…${String(w.owner).slice(-4)}` : '',
+        on: w.on !== false, webhook: url ? `${url}/hooks/whatsapp` : '', verify: w.verify ?? '', code: live(w), error: phoneError.whatsapp,
+        hooked: !!url && w.hookedUrl === url, used: !!one("SELECT 1 FROM tasks WHERE via = 'whatsapp'") } };
+  },
+  'PUT /api/remote': (_, b) => {
+    if (typeof b.password === 'string') {
+      if (b.password.length < 8) throw new Error('Use at least 8 characters.');
+      setSetting('remote_password', hashPassword(b.password));
+      exec('DELETE FROM sessions'); // a new password signs everyone out
+    }
+    if (b.signOutAll) exec('DELETE FROM sessions');
+    if (typeof b.localLock === 'boolean') {
+      if (b.localLock && !setting('remote_password')) throw new Error('Set a password first.');
+      setSetting('remote_local_lock', b.localLock ? '1' : '');
+    }
+    if (typeof b.signOut === 'string' && /^[0-9a-f]{16}$/.test(b.signOut)) exec("DELETE FROM sessions WHERE substr(hash, 1, 16) = ?", b.signOut); // one device
+    if (typeof b.ownUrl === 'string') { // your own address: orbit.example.com or https://orbit.example.com
+      const u = b.ownUrl.trim().replace(/\/+$/, '').replace(/^(?!https?:\/\/)(?=.)/, 'https://');
+      if (u && !/^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)+(:\d+)?$/i.test(u)) throw new Error('Use your address, like orbit.example.com');
+      setSetting('remote_own_url', u.toLowerCase());
+      stopTunnel();
+    }
+    if (typeof b.tunnelToken === 'string') { // the token of the tunnel you made in Cloudflare's dashboard ('' = none)
+      const tok = b.tunnelToken.trim() && readTunnelToken(b.tunnelToken);
+      if (b.tunnelToken.trim() && !tok) throw new Error("That isn't a tunnel token. In Cloudflare it's the long text starting with eyJ, at the end of the install command.");
+      setSetting('remote_tunnel_token', tok || '');
+      stopTunnel();
+    }
+    if (typeof b.on === 'boolean') {
+      if (b.on && !setting('remote_password')) throw new Error('Set a password first.');
+      setSetting('remote_on', b.on ? '1' : '');
+      if (!b.on) stopTunnel();
+    }
+    startTunnel();
+    if (setting('remote_own_url') && !tunnelToken() && (typeof b.ownUrl === 'string' || b.on === true)) linkChanged(); // a tunnel you run yourself: it's there already
+  },
+  'PUT /api/remote/telegram': async (_, b) => {
+    if (typeof b.token === 'string') { // a new bot: check it with Telegram, then pair again
+      const token = b.token.trim();
+      tgRun++;
+      if (!token) return saveJson('telegram', {});
+      if (!/^\d+:[\w-]{30,}$/.test(token)) throw new Error("That doesn't look like a bot token. @BotFather sends one like 123456789:AA…");
+      const me = await tgCall('getMe', {}, token);
+      saveJson('telegram', { token, bot: me.username, on: true });
+      tgPoll();
+    }
+    if (b.pair) saveJson('telegram', { ...tg(), code: crypto.randomBytes(6).toString('hex'), codeUntil: Date.now() + 15 * 60e3 });
+    if (b.unpair) saveJson('telegram', { ...tg(), chat: null, name: null });
+    if (typeof b.on === 'boolean') { saveJson('telegram', { ...tg(), on: b.on }); b.on ? tgPoll() : tgRun++; }
+    if (b.test) { if (!phoneReady('telegram')) throw new Error('Pair your Telegram first.'); await tgSend('👋 Hello from Orbit. Write anything here to talk to your team.'); }
+  },
+  'PUT /api/remote/whatsapp': async (_, b) => {
+    const c = { ...wa() };
+    for (const k of ['phoneId', 'appId']) if (typeof b[k] === 'string') c[k] = b[k].trim().replace(/\D/g, '');
+    for (const [k, from] of [['token', 'token'], ['appSecret', 'appSecret']]) if (typeof b[from] === 'string' && b[from].trim()) c[k] = b[from].trim();
+    c.verify ||= crypto.randomBytes(16).toString('hex'); // what Meta repeats back when it checks the address
+    if (b.pair) Object.assign(c, { code: crypto.randomBytes(3).toString('hex'), codeUntil: Date.now() + 15 * 60e3 });
+    if (b.unpair) c.owner = null;
+    if (typeof b.on === 'boolean') c.on = b.on;
+    if (b.forget) return saveJson('whatsapp', {});
+    saveJson('whatsapp', c);
+    if (b.test) { if (!phoneReady('whatsapp')) throw new Error('Pair your WhatsApp first.'); await waSend('👋 Hello from Orbit. Write anything here to talk to your team.'); }
+    if (b.phoneId !== undefined || b.appId !== undefined || b.appSecret) await waSubscribe();
+  },
   'POST /api/hiring/next': (_, b) => hiringStep(cleanRounds(b.rounds)), // the next questions, or the plan
   'POST /api/hiring/hire': (_, b) => hireAll(b.hires),
   'POST /api/employees/import': (_, b) => importPerson(b.file),
@@ -2218,13 +2730,19 @@ const routes = {
 };
 
 if (import.meta.main) http.createServer(async (req, res) => {
-  const send = (code, data, type = 'application/json') => {
-    res.writeHead(code, { 'Content-Type': type });
+  const send = (code, data, type = 'application/json') => { // no other website can show Orbit inside its own page
+    res.writeHead(code, { 'Content-Type': type, 'X-Content-Type-Options': 'nosniff', ...(type === 'text/html' ? { 'X-Frame-Options': 'DENY', 'Content-Security-Policy': "frame-ancestors 'none'" } : {}) });
     res.end(type === 'application/json' ? JSON.stringify(data ?? { ok: true }) : data);
   };
-  // This server can run commands on your Mac, so only accept requests from its own page (and its own employees' tools).
-  if (!HOSTS.includes(req.headers.host)) return send(403, { error: 'Forbidden host' });
+  // This server can run commands on your Mac, so only accept requests from its own page (and its own employees' tools),
+  // and, through the web link, from you once you're signed in.
   const url = new URL(req.url, 'http://x');
+  if (req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || !HOSTS.includes(req.headers.host)) {
+    if (!publicUrl() || req.headers.host !== new URL(publicUrl()).host) return send(403, { error: 'Forbidden host' });
+    if (await fromOutside(req, res, url, send)) return;
+  } else if (url.pathname === '/health') return send(200, { ok: true }); // "is Orbit running?", for the installers and the offline page
+  // "Ask for the password on this computer too": other accounts on this computer can't use Orbit without it. Employees' tools have their own key.
+  else if (setting('remote_local_lock') === '1' && url.pathname !== '/mcp' && (await fromOutside(req, res, url, send, true))) return;
   if (url.pathname === '/mcp') return serveTools(req, res);
   if (req.method !== 'GET' && !String(req.headers['content-type']).startsWith('application/json'))
     return send(415, { error: 'JSON only' });
@@ -2296,7 +2814,7 @@ if (import.meta.main) http.createServer(async (req, res) => {
     const body = raw ? JSON.parse(raw) : Object.fromEntries(url.searchParams); // GET details come in the address
     const t = url.pathname.startsWith('/api/tasks/') ? task(id) : null;
     if (url.pathname.startsWith('/api/tasks/') && !t) return send(404, { error: 'No such task.' });
-    const out = await handler(t, body, id);
+    const out = await handler(t, body, id, req);
     if (req.method !== 'GET') pump();
     send(200, out);
   } catch (err) {
@@ -2313,6 +2831,9 @@ if (import.meta.main) http.createServer(async (req, res) => {
   // Which engines are ready (the first time: which is the main AI), and Orbit's tools kept connected in Antigravity (the app may have moved).
   checkEngines().then(() => { pickMainEngine(); return switchedOn('gemini') && setupAntigravity(true); }).catch(() => {});
   // Closing the app stops everyone, so nothing keeps running (and using your plan) in the background.
-  for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { for (const c of [...running.values(), ...reflecting.values()]) c.kill(); process.exit(); });
+  // Your phone: the web link, and Telegram.
+  startTunnel();
+  if (tg().token) tgPoll();
+  for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { for (const c of [...running.values(), ...reflecting.values(), tunnel].filter(Boolean)) c.kill(); process.exit(); });
   console.log(`Orbit is running → http://localhost:${PORT}`);
 });

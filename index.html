@@ -714,7 +714,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { ap
   .switchrow .grow { display: grid; min-width: 0; }
   .switchrow b { font-size: 14px; font-weight: 600; }
   .switchrow small { color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
-  .sform input.switch, .conn input.switch { appearance: none; width: 38px; height: 22px; padding: 0; border-radius: 999px; border: 0; background: var(--line-strong); position: relative; flex: none; cursor: pointer; transition: background .15s; }
+  .sform input.switch, .conn input.switch, .phcard input.switch { appearance: none; width: 38px; height: 22px; padding: 0; border-radius: 999px; border: 0; background: var(--line-strong); position: relative; flex: none; cursor: pointer; transition: background .15s; }
   .conn input.switch:disabled { opacity: .4; cursor: default; }
   .conn input.switch:checked { background: var(--accent); }
   /* Settings → Connectors */
@@ -735,7 +735,76 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { ap
   .conn .ckey { display: flex; gap: 6px; }
   .conn .ckey input { flex: 1; min-width: 0; border: 1px solid var(--line-strong); border-radius: 9px; padding: 6px 10px; background: var(--bg); font-size: 13px; }
   .switch::after { content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / .3); transition: transform .15s; }
-  .sform input.switch:checked, .conn input.switch:checked { background: var(--accent); }
+  .sform input.switch:checked, .conn input.switch:checked, .phcard input.switch:checked { background: var(--accent); }
+  .phcard input.switch:disabled { opacity: .4; cursor: default; }
+  /* Settings → Phone */
+  .phcard input:not(.switch) { width: 100%; min-width: 0; border: 1px solid var(--line-strong); border-radius: 9px; padding: 6px 10px; background: var(--bg); font-size: 13px; }
+  .phcard .inl { display: flex; gap: 6px; }
+  .phcard .linkrow { display: flex; gap: 6px; align-items: center; margin: 10px 0 0; }
+  .phcard .linkrow code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; font: 12px var(--mono); padding: 6px 9px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); }
+  .phcard ol.phsteps { margin: 0 0 10px; padding-left: 20px; color: var(--muted); font-size: 13px; display: grid; gap: 4px; }
+  .phcard .wagrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; align-items: end; }
+  .phcard .wagrid label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--muted); }
+  .phcard .acts2 { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .phcard details summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-top: 12px; }
+  .phcard .note { font-size: 13px; color: var(--muted); margin: 10px 0 0; }
+  .phcard a { color: var(--accent); }
+  .phsteplist { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 8px; }
+  .phstep { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--bg) 60%, transparent); }
+  .phstep .n { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 600; border: 1px solid var(--line-strong); color: var(--muted); }
+  .phstep > div > b { display: block; font-size: 13.5px; font-weight: 600; line-height: 24px; }
+  .phstep.done > div > b { color: var(--muted); font-weight: 500; }
+  .phstep.done .n { background: var(--s-done); border-color: var(--s-done); color: #fff; }
+  .phstep.now { border-color: color-mix(in srgb, var(--accent) 60%, var(--line)); }
+  .phstep.now .n { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  .phstep .body { margin-top: 4px; font-size: 13px; color: var(--muted); line-height: 1.5; }
+  .phstep .body > span { display: block; }
+  .phstep .body > * + * { margin-top: 8px; }
+  .phstep .body ol, .phstep .body ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+  .phstep .body b { color: var(--text); font-weight: 600; }
+  .phstep .body code, .phcard .acts2 code { font: 12px var(--mono); padding: 1px 5px; border-radius: 6px; background: var(--bg); }
+  .phstep .body .linkrow { margin: 0; }
+  .phstep details > summary { list-style: none; cursor: pointer; }
+  .phstep details > summary::-webkit-details-marker { display: none; }
+  .phstep details > summary b::after { content: ''; display: inline-block; width: 6px; height: 6px; margin: 0 0 3px 9px; border-right: 1.5px solid var(--faint); border-bottom: 1.5px solid var(--faint); rotate: -45deg; transition: rotate .15s; }
+  .phstep details[open] > summary b::after { rotate: 45deg; }
+  .phcard .phstep details > summary { margin: 0; font-size: 13.5px; line-height: 24px; color: var(--text); }
+  .phstep.later > details > summary b, .phstep.done > details > summary b { color: var(--muted); font-weight: 500; }
+  .phcard .ok { color: var(--s-done); }
+  .phtiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+  @media (max-width: 700px) { .phtiles { grid-template-columns: minmax(0, 1fr); } }
+  .phtile { display: flex; flex-direction: column; gap: 6px; min-width: 0; text-align: left; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--side); color: var(--text); font: inherit; cursor: pointer; }
+  .phtile:hover { border-color: var(--line-strong); }
+  .phtile.on { border-color: color-mix(in srgb, var(--accent) 60%, var(--line)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent); }
+  .phtile .top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .phtile b { font-size: 14px; font-weight: 600; }
+  .phtile small { color: var(--muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .phpill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; white-space: nowrap; }
+  .phpill::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .phpill.good { color: var(--s-done); background: color-mix(in srgb, var(--s-done) 14%, transparent); }
+  .phpill.bad { color: var(--s-failed); background: color-mix(in srgb, var(--s-failed) 14%, transparent); }
+  .phpill.idle { color: var(--muted); background: var(--hover); }
+  .phhead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .phhead p { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
+  .phstatus { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 6px; padding: 10px 12px; border-radius: 10px; font-size: 13px; }
+  .phstatus.good { background: color-mix(in srgb, var(--s-done) 12%, transparent); }
+  .phstatus.bad { background: color-mix(in srgb, var(--s-failed) 12%, transparent); }
+  .phstatus.idle { background: var(--hover); color: var(--muted); }
+  .phstatus small { flex-basis: 100%; color: var(--muted); }
+  .phright { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; min-width: 0; font-size: 13px; }
+  .phdevs { display: grid; gap: 6px; margin: 8px 0 4px; }
+  .phdev { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--bg) 60%, transparent); }
+  .phdev-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .phdev-main b { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; }
+  .phdev-main small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12.5px; }
+  .phurl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 12px var(--mono); }
+  .phcard .phfold { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+  .phcard .phfold > summary { margin: 0; cursor: pointer; font-size: 13px; color: var(--muted); }
+  .phcard .phfold[open] > summary { margin-bottom: 10px; }
+  .phseg { display: inline-flex; gap: 2px; padding: 3px; margin: 0 0 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); }
+  .phseg button { border: 0; background: none; color: var(--muted); font-size: 13px; padding: 5px 12px; border-radius: 8px; cursor: pointer; }
+  .phseg button.on { background: var(--raised); color: var(--text); box-shadow: 0 1px 3px rgb(0 0 0 / .2); }
+  .phcard .note code { font: 12px var(--mono); padding: 1px 5px; border-radius: 6px; background: var(--bg); }
   .switch:checked::after { transform: translateX(16px); }
   .switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .savebar { position: sticky; bottom: 12px; z-index: 5; padding: 10px 12px; border-radius: 14px; background: var(--raised); border: 1px solid var(--line-strong); box-shadow: 0 10px 30px rgb(0 0 0 / .25); flex-wrap: wrap; }
@@ -1091,7 +1160,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { ap
     .trow { grid-template-columns: 14px minmax(0, 1fr) auto; padding-left: 10px; }
     .trow .id, .trow .ptag, .trow .extra { display: none; }
     .page, .page-head, .slist, .person { padding-left: 16px; padding-right: 16px; }
-    .settings { grid-template-columns: 1fr; padding: 16px; }
+    .settings { grid-template-columns: minmax(0, 1fr); padding: 16px; } /* minmax: a long line (a web address) can't widen the page */
     .snav { flex-direction: row; flex-wrap: wrap; position: static; }
     .snav h2 { width: 100%; }
     .page-head { flex-wrap: wrap; }
@@ -1557,6 +1626,7 @@ const createdBy = (t) => (t.created_by === 'me' ? 'You' : t.created_by === 'sche
 async function api(method, url, body) {
   const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) });
   const data = await r.json().catch(() => ({}));
+  if (r.status === 401) location.replace('/'); // signed out (on the web link, or with the password on this computer too): back to sign-in
   if (!r.ok) throw new Error(data.error || 'Something went wrong.');
   return data;
 }
@@ -1694,7 +1764,7 @@ const VIEWS = {
   settings: () => `<div class="settings"><nav class="snav"><h2>Settings</h2>
       <a href="#/settings" data-s="general">General</a><a href="#/settings/rules" data-s="rules">Rules</a>
       <a href="#/settings/appearance" data-s="appearance">Appearance</a>
-      <a href="#/settings/team" data-s="team">Team</a><a href="#/settings/projects" data-s="projects">Projects</a><a href="#/settings/skills" data-s="skills">Skills</a><a href="#/settings/connectors" data-s="connectors">Connectors</a></nav>
+      <a href="#/settings/team" data-s="team">Team</a><a href="#/settings/projects" data-s="projects">Projects</a><a href="#/settings/skills" data-s="skills">Skills</a><a href="#/settings/connectors" data-s="connectors">Connectors</a><a href="#/settings/phone" data-s="phone">Phone</a></nav>
     <div id="sContent"></div></div>`,
   team: () => `<div class="page-head"><h2>Your team</h2><span class="grow"></span><span class="hint" id="orgHint" role="status"></span>
       <button class="btn" id="orgEdit">Edit</button><button class="btn" data-hirehelp>${icon('spark')} Hire with help</button><a class="btn" href="#/settings/team/new">${icon('userplus')} Hire</a></div>
@@ -2149,6 +2219,202 @@ async function renderConnectors(box, again) {
       <span class="tl-btns"><button type="button" class="btn small" data-conncheck>Check again</button></span></div>
     <div class="conns">${[claude, ...conn.engines].map(card).join('')}</div></div>`);
 }
+// Settings → Phone: open Orbit from anywhere (a web link with a password), and chat with your team from Telegram or WhatsApp.
+let phone = null, phoneAt = 0, linkMode = null, phoneTab = 'link'; // linkMode: which kind of web link you're looking at (null = the one you use); phoneTab: which of the three is open
+const outside = !['localhost', '127.0.0.1', '[::1]'].includes(location.hostname); // signed in through the web link
+async function renderPhone(box, again) {
+  const waiting = phone && (phone.starting || phone.telegram.code || phone.whatsapp.code);
+  if (mounted !== 'phone' || again || Date.now() - phoneAt > (waiting ? 3000 : 8000)) { // steps tick off by themselves while you work through them
+    if (mounted !== 'phone' && !phone) setHTML(box, '<div class="scard"><p class="empty">Loading…</p></div>');
+    mounted = 'phone';
+    phoneAt = Date.now();
+    try { phone = await api('GET', '/api/remote'); } catch (err) { return setHTML(box, `<div class="scard"><p class="error">${esc(err.message)}</p></div>`); }
+  }
+  if (!phone) return;
+  const p = phone, t = p.telegram, w = p.whatsapp, ro = outside ? 'disabled' : '';
+  const copy = (text) => `<div class="linkrow"><code>${esc(text)}</code><button type="button" class="btn small" data-copytext="${esc(text)}">Copy</button></div>`;
+  const out = (href, text) => `<a href="${href}" target="_blank" rel="noopener">${text}</a>`;
+  // Numbered steps: done ones are ticked and folded (keep: still shown), the next one is highlighted, the rest wait their turn.
+  // Numbered steps, one at a time: the step you're on is open; the others show just their title (click one to read it).
+  const steps = (list) => { const now = list.findIndex((x) => !x.done);
+    return `<ol class="phsteplist">${list.map((x, i) => `<li class="phstep ${x.done ? 'done' : i === now ? 'now' : 'later'}"><span class="n">${x.done ? '✓' : i + 1}</span>
+      ${i === now || (x.done && x.keep) ? `<div><b>${x.title}</b><div class="body">${x.body}</div></div>`
+        : `<details><summary><b>${x.title}</b></summary><div class="body">${x.body}</div></details>`}</li>`).join('')}</ol>`; };
+  const port = location.port || 4321;
+  const mode = linkMode ?? (p.ownUrl ? 'domain' : 'free'); // the free Cloudflare link, or your own domain
+  const linkState = !p.on ? '' : p.error && p.connected === false ? `<span class="error">${esc(p.error)}</span>`
+    : !p.url || p.connected === false ? `<span>${p.ownUrl ? 'Connecting to Cloudflare…' : 'Opening the link…'} (a few seconds)</span>`
+    : p.reach.ok ? `<span class="ok">✓ Working: your phone can open ${esc(p.url)}</span>${p.reach.why ? `<span>${esc(p.reach.why)}</span>` : ''}`
+    : p.reach.ok === false ? `<span class="error">${esc(p.reach.why)}</span><span><button type="button" class="btn small" data-phone="recheck" ${ro}>Check again</button></span>`
+    : `<span>Checking that ${esc(p.url)} works…</span>`;
+  const linkSwitch = (label) => `<label class="inl" style="align-items:center;gap:10px"><input type="checkbox" class="switch" data-phoneswitch="link" ${p.on ? 'checked' : ''} ${!p.password || outside ? 'disabled' : ''} aria-label="Web link">${label}</label>`;
+  const stepCloudflared = { done: p.cloudflared, title: 'Install cloudflared, the free tool that makes the link',
+    body: `Open <b>Terminal</b> on this Mac and run:${copy('brew install cloudflared')}
+      <span>No Homebrew? Install it first from ${out('https://brew.sh', 'brew.sh')}, or download cloudflared from ${out('https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/', 'Cloudflare')}.
+      Then <button type="button" class="btn small" data-phone="recheck">Check again</button></span>` };
+  const stepPassword = { done: p.password, title: 'Choose a password',
+    body: `At least 8 characters. You type it once on each phone.
+      <form class="inl" data-phoneform="password"><input type="password" name="password" autocomplete="new-password" minlength="8" placeholder="Password" aria-label="Password" ${ro}><button class="btn small primary" ${ro}>Set password</button></form>` };
+  const stepOn = { done: p.on && p.reach.ok === true, title: 'Switch the web link on', body: `${linkSwitch('Open Orbit from anywhere')}${linkState}` };
+  const stepPhone = { done: p.sessions > 0, keep: true, title: 'Open it on your phone, sign in, and add it to your home screen',
+    body: `${p.url ? copy(p.url) : '<span>Your address appears here once the link is on.</span>'}
+      <ol><li>Send the address to yourself (for example in Notes or a chat with yourself), and open it on your phone.</li>
+      <li>Sign in with your password. Your phone stays signed in for 30 days.</li>
+      <li>Add it to your home screen so it opens like an app. <b>iPhone:</b> in Safari tap <b>Share</b>, then <b>Add to Home Screen</b>. <b>Android:</b> in Chrome tap <b>⋮</b>, then <b>Add to Home screen</b>.</li></ol>` };
+  const host = (() => { try { return new URL(p.ownUrl).host; } catch { return ''; } })();
+  const working = p.on && p.reach.ok === true, linkProblem = p.on && !working && (p.reach.ok === false || (!!p.error && p.connected === false));
+  const domainSteps = [
+    stepCloudflared,
+    { done: p.tunnelToken || working, title: 'Make a tunnel in your Cloudflare account',
+      body: `<ol><li>Open ${out('https://dash.cloudflare.com', 'dash.cloudflare.com')} and pick your account.</li>
+        <li>Open <b>Zero Trust</b> in the menu on the left. The first time, it asks you to choose a team name and the <b>Free</b> plan.</li>
+        <li>Go to <b>Networks → Tunnels</b> and click <b>Create a tunnel</b>. Choose <b>Cloudflared</b>, name it <b>orbit</b>, and click <b>Save tunnel</b>.</li>
+        <li>The next page shows commands for installing it. Copy any one of them: it ends with a long token that starts with <code>eyJ</code>. <b>Don't run it</b>: Orbit runs the tunnel itself. Click <b>Next</b>.</li></ol>` },
+    { done: !!p.ownUrl, title: 'Point an address on your domain at Orbit',
+      body: `<span>On the next page (<b>Route traffic</b>, also called <b>Public hostname</b>), fill in:</span>
+        <ul><li><b>Subdomain:</b> <code>orbit</code> (or any name you like)</li><li><b>Domain:</b> your domain</li><li><b>Path:</b> leave it empty</li>
+        <li><b>Service:</b> type <b>HTTP</b> (not HTTPS), URL <code>localhost:${port}</code></li></ul>
+        <span>Click <b>Save</b> (or <b>Complete setup</b>). Cloudflare adds the address to your domain by itself.</span>` },
+    { done: !!p.ownUrl && (p.tunnelToken || working), title: 'Paste your address and the tunnel token here',
+      body: `<form class="wagrid" data-phoneform="domain">
+        <label>Your address<input name="ownUrl" value="${esc(host)}" placeholder="orbit.example.com" autocomplete="off" ${ro}></label>
+        <label>Tunnel token<input type="password" name="tunnelToken" autocomplete="off" placeholder="${p.tunnelToken ? 'Saved. Paste a new one to replace it' : 'eyJ… (or the whole command)'}" ${ro}></label>
+        <div><button class="btn small primary" ${ro}>Save</button></div></form>
+        <span>Already running the tunnel yourself (for example, you ran Cloudflare's install command)? Enter just the address and leave the token empty.</span>` },
+    stepPassword, stepOn, stepPhone,
+  ];
+  // A signed-in device as people say it ("iPhone · Safari", "Pixel 8 · Chrome"), and where it is ("Bengaluru, Karnataka, India").
+  const deviceName = (ua) => {
+    const model = ua.match(/Android[^;)]*;\s*([^;)]+?)(?:\s+Build\/|\))/)?.[1];
+    const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? (model && model !== 'K' ? model : 'Android phone')
+      : /CrOS/.test(ua) ? 'Chromebook' : /Macintosh|Mac OS X/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows PC' : /Linux/.test(ua) ? 'Linux computer' : 'Unknown device';
+    const app = /Edg[A-Z]*\//.test(ua) ? 'Edge' : /SamsungBrowser/.test(ua) ? 'Samsung Internet' : /OPR\//.test(ua) ? 'Opera' : /CriOS|Chrome\//.test(ua) ? 'Chrome'
+      : /FxiOS|Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : '';
+    return app ? `${os} · ${app}` : os;
+  };
+  const country = (c) => { try { return c && !['XX', 'T1'].includes(c) ? new Intl.DisplayNames([], { type: 'region' }).of(c) : ''; } catch { return c; } };
+  const placeOf = (pl) => [...new Set([pl.city, pl.region, country(pl.country)].filter(Boolean))].join(', ');
+  // Pieces for the panels: a status line, a setting row, a folded section, a heading with its switch.
+  const status = (cls, html) => `<div class="phstatus ${cls}">${html}</div>`;
+  const row = (title, small, right = '') => `<div class="setrow"><div><b>${title}</b>${small ? `<small>${small}</small>` : ''}</div><div class="phright">${right}</div></div>`;
+  const fold = (title, inner, open) => `<details class="phfold" ${open ? 'open' : ''}><summary>${title}</summary>${inner}</details>`;
+  const head = (title, sub, ctl = '') => `<div class="phhead"><div><h3>${title}</h3><p>${sub}</p></div>${ctl}</div>`;
+  const sw = (key, on, off) => `<input type="checkbox" class="switch" data-phoneswitch="${key}" ${on ? 'checked' : ''} ${ro || (off ? 'disabled' : '')} aria-label="On or off">`;
+  const btn = (what, text, cls = '') => `<button type="button" class="btn small ${cls}" data-phone="${what}" ${ro}>${text}</button>`;
+  const awake = '<p class="note">Keep this Mac on and awake, or your phone can\'t reach Orbit: System Settings → Battery (or Energy) → turn on <b>Prevent automatic sleeping when the display is off</b> (while it\'s plugged in).</p>';
+
+  // ---- the web link: set it up, then see whether your phone can reach it ----
+  const linkSetup = `<div class="phseg" role="tablist"><button type="button" class="${mode === 'free' ? 'on' : ''}" data-linkmode="free" ${ro}>Free link</button><button type="button" class="${mode === 'domain' ? 'on' : ''}" data-linkmode="domain" ${ro}>My own domain</button></div>
+    <p class="note" style="margin:0 0 10px">${mode === 'free' ? 'Quickest: a free address from Cloudflare, like some-words.trycloudflare.com. It changes each time Orbit restarts; if Telegram is set up, it sends you the new one.'
+      : 'An address on a domain you have on Cloudflare, like orbit.yourdomain.com, through a free Cloudflare tunnel. It never changes, so your home-screen app and WhatsApp keep working after restarts.'}</p>
+    ${steps(mode === 'free' ? [stepCloudflared, stepPassword, stepOn, stepPhone] : domainSteps)}`;
+  const linkPanel = !p.password
+    ? `<div class="scard phcard">${head('Web link', 'Use the whole of Orbit in your phone\'s browser, away from home, through a private web link. Anyone who opens the link still needs your password.')}${linkSetup}${awake}</div>`
+    : `<div class="scard phcard">${head('Web link', 'The whole of Orbit in your phone\'s browser, from anywhere.', sw('link', p.on))}
+      ${!p.on ? status('idle', 'Off. Switch it on to open Orbit from your phone.')
+        : working ? status('good', `✓ Working: your phone can open Orbit.${p.reach.why ? `<small>${esc(p.reach.why)}</small>` : ''}`)
+        : linkProblem ? status('bad', `<span>${esc(p.reach.why || p.error)}</span>${btn('recheck', 'Check again')}`)
+        : status('idle', `${p.ownUrl ? 'Connecting' : 'Opening the link'} and checking that it works…`)}
+      ${row('Address', p.ownUrl ? (p.tunnelToken ? 'Your own domain, through a Cloudflare tunnel that Orbit runs.' : 'Your own domain, through a tunnel you run.') : 'A free Cloudflare link. It changes each time Orbit restarts.',
+        p.url ? `<code class="phurl">${esc(p.url.replace(/^https:\/\//, ''))}</code><button type="button" class="btn small" data-copytext="${esc(p.url)}">Copy</button>` : '')}
+      ${row('Signed-in devices', p.devices.length ? `${p.devices.length === 1 ? 'One phone or browser is' : `${p.devices.length} phones and browsers are`} signed in. Each stays signed in for 30 days.` : 'None yet. Each one stays signed in for 30 days.',
+        p.devices.length > 1 ? btn('signoutall', 'Sign out everyone', 'ghost') : '')}
+      ${p.devices.length ? `<div class="phdevs">${p.devices.map((d) => `<div class="phdev"><div class="phdev-main">
+          <b>${esc(deviceName(d.agent))}${d.current ? '<span class="phpill good">This device</span>' : ''}</b>
+          <small>${/^(::ffff:)?127\.|^::1$/.test(d.ip) ? 'On this computer' : `${esc(placeOf(d.place) || 'Place not known')}${d.ip ? ` · ${esc(d.ip)}` : ''}`}</small>
+          <small>Signed in ${when(d.signedIn)}${d.seen ? ` · active ${rel(d.seen)}` : ''}</small></div>
+          ${d.current ? '<button type="button" class="btn small" data-phone="logout">Sign out</button>' : `<button type="button" class="btn small ghost" data-phonesignout="${esc(d.id)}" ${ro}>Sign out</button>`}</div>`).join('')}</div>
+        ${p.ownUrl && !p.devices.some((d) => d.place.city) ? '<p class="note">To see the city as well as the country: in Cloudflare, open your domain, go to <b>Rules → Settings</b> (on older dashboards <b>Transform Rules → Managed Transforms</b>) and turn on <b>Add visitor location headers</b>.</p>' : ''}` : ''}
+      ${row('Password on this Mac too', 'Other accounts on this Mac (like another person\'s login) can\'t use Orbit without the password. You sign in here once, for 30 days.', sw('locallock', p.localLock))}
+      ${row('Password', 'Changing it signs everyone out.', `<form class="inl" data-phoneform="password"><input type="password" name="password" autocomplete="new-password" minlength="8" placeholder="New password" aria-label="New password" ${ro}><button class="btn small" ${ro}>Change</button></form>`)}
+      ${awake}
+      ${fold('Setup steps', linkSetup, linkProblem)}
+      ${p.ownUrl ? fold('Extra lock: Cloudflare Access (optional)', `<p class="note">Cloudflare can ask for a code sent to your email before anyone even sees Orbit's sign-in. In Zero Trust: <b>Access → Applications → Add an application → Self-hosted</b>, enter your address (${esc(host)}), and add a policy that allows only your email.
+        If you use WhatsApp, add a second application for the path <code>hooks/whatsapp</code> with a <b>Bypass</b> policy, or Meta can't reach Orbit.</p>`) : ''}</div>`;
+
+  // ---- Telegram ----
+  const pairTg = t.code ? `<span>Click ${out(`https://t.me/${esc(t.bot)}?start=${esc(t.code)}`, `t.me/${esc(t.bot)}`)}: it opens Telegram (on this Mac or your phone). Then tap <b>Start</b>.
+      Or send your bot <code>/start ${esc(t.code)}</code>. The code works once, for 15 minutes.</span><span>${btn('tgpair', 'New code')}</span>`
+    : `<span>Only the chat you pair can use your bot; anyone else is told it's private.</span><span>${btn('tgpair', 'Pair my Telegram', 'primary')}</span>`;
+  const commands = '<code>@Name message</code> talks to someone else · <code>/new</code> starts a new chat · <code>/chats</code> and <code>/open 2</code> switch chats · <code>/team</code> <code>/status</code> <code>/stop</code> <code>/link</code> <code>/help</code>';
+  const tgSetup = steps([
+    { done: t.token, title: 'Make your own bot with @BotFather',
+      body: `<ol><li>Open Telegram on your phone or this Mac, and open ${out('https://t.me/BotFather', '@BotFather')} (Telegram's own bot for making bots, with a blue tick).</li>
+        <li>Send <code>/newbot</code>.</li><li>Give it a name, like <b>My Orbit</b>.</li><li>Give it a username that ends in <b>bot</b>, like <b>myname_orbit_bot</b>.</li>
+        <li>BotFather replies with a token that looks like <code>123456789:AAH…</code>. Keep it private: whoever has it controls your bot.</li></ol>` },
+    { done: t.token, title: 'Paste the token here',
+      body: `<form class="inl" data-phoneform="tgtoken"><input type="password" name="token" autocomplete="off" placeholder="123456789:AA…" aria-label="Bot token" ${ro}><button class="btn small primary" ${ro}>Save</button></form>` },
+    { done: t.paired, title: 'Pair your Telegram', body: t.token ? pairTg : '' },
+    { done: t.used, title: 'Say hello', body: `<span>Write anything to your bot: it goes to your main assistant, in the same chat until you start a new one.</span><span>${commands}</span>` },
+  ]);
+  const tgPanel = !t.paired
+    ? `<div class="scard phcard">${head('Telegram', 'Chat with your team from Telegram: replies, requests for your OK, questions and finished work come to you, with buttons. Works without the web link.')}
+      ${t.error ? status('bad', esc(t.error)) : ''}${tgSetup}${t.token ? `<div class="acts2">${btn('tgforget', 'Remove this bot', 'ghost')}</div>` : ''}</div>`
+    : `<div class="scard phcard">${head('Telegram', `Chat with your team from <b>@${esc(t.bot)}</b>.`, sw('telegram', t.on))}
+      ${t.error ? status('bad', esc(t.error)) : !t.on ? status('idle', 'Off. Your bot ignores messages until you switch it back on.')
+        : status('good', `✓ Connected to ${esc(t.name || 'your Telegram')}. Write to ${out(`https://t.me/${esc(t.bot)}`, `@${esc(t.bot)}`)} to talk to your team.`)}
+      ${row('Test it', 'Orbit sends you a message on Telegram.', btn('tgtest', 'Send a test message'))}
+      ${row('What you can send', `Anything goes to your main assistant. ${commands}`)}
+      ${row('Your bot', 'Unpair to use a different Telegram account; remove the bot to use another one.', `${btn('tgunpair', 'Unpair', 'ghost')}${btn('tgforget', 'Remove', 'ghost')}`)}
+      ${fold('Setup steps', tgSetup)}</div>`;
+
+  // ---- WhatsApp ----
+  const waSaved = !!(w.phoneId && w.token && w.appId && w.secret);
+  const waSetup = steps([
+    { done: waSaved, title: 'Make a Meta developer app with WhatsApp',
+      body: `<ol><li>Go to ${out('https://developers.facebook.com/apps', 'developers.facebook.com/apps')} and log in with Facebook. The first time, it asks you to register as a developer (free).</li>
+        <li>Click <b>Create app</b>. Pick <b>Other</b>, then the app type <b>Business</b>, give it a name like <b>My Orbit</b>, and create it.</li>
+        <li>On the app's page, find <b>WhatsApp</b> and click <b>Set up</b>. If it asks for a business portfolio, create one with your name.</li></ol>` },
+    { done: waSaved, title: 'Get the test number, and add your own number',
+      body: `<ol><li>Open <b>WhatsApp → API Setup</b> in the menu on the left.</li><li>Under <b>From</b> is your free test number. Copy its <b>Phone number ID</b> (the long number below it).</li>
+        <li>Under <b>To</b>, click <b>Manage phone number list</b>, add your own WhatsApp number, and enter the code WhatsApp sends you.</li></ol>` },
+    { done: waSaved, title: 'Get an access token',
+      body: `<span><b>To try it today:</b> on API Setup, click <b>Generate access token</b> and copy it. It works for 24 hours.</span>
+        <span><b>To keep it working:</b> open ${out('https://business.facebook.com/settings', 'business.facebook.com/settings')} → <b>Users → System users</b> → <b>Add</b> (role Admin).
+        Then <b>Add assets → Apps</b> → your app → <b>Full control</b>. Then <b>Generate new token</b> for your app, tick <code>whatsapp_business_messaging</code> and <code>whatsapp_business_management</code>, and copy it.</span>` },
+    { done: waSaved, title: 'Get the App ID and the App secret', body: 'In your app, open <b>App settings → Basic</b>. Copy the <b>App ID</b>, then click <b>Show</b> next to <b>App secret</b> (it asks for your Facebook password) and copy that too.' },
+    { done: waSaved, title: 'Paste them here',
+      body: `<form class="wagrid" data-phoneform="wa">
+        <label>Phone number ID<input name="phoneId" value="${esc(w.phoneId)}" inputmode="numeric" autocomplete="off" ${ro}></label>
+        <label>App ID<input name="appId" value="${esc(w.appId)}" inputmode="numeric" autocomplete="off" ${ro}></label>
+        <label>Access token<input type="password" name="token" autocomplete="off" placeholder="${w.token ? 'Saved. Paste a new one to replace it' : 'EAA…'}" ${ro}></label>
+        <label>App secret<input type="password" name="appSecret" autocomplete="off" placeholder="${w.secret ? 'Saved. Paste a new one to replace it' : ''}" ${ro}></label>
+        <div><button class="btn small primary" ${ro}>Save</button></div></form>` },
+    { done: !!p.url, title: 'Switch the web link on', body: 'WhatsApp delivers your messages to Orbit through its web link: set it up under <b>Web link</b>.' },
+    { done: w.hooked, title: 'Connect WhatsApp to Orbit',
+      body: `<span>Orbit tells Meta its link by itself, and again whenever the link changes. This step ticks once Meta has checked it.</span>
+        <span>Not ticked after a minute? In your Meta app open <b>WhatsApp → Configuration</b>, click <b>Edit</b> next to the webhook, paste these two, and click <b>Verify and save</b>:</span>
+        ${w.webhook ? copy(w.webhook) : '<span>(the callback URL appears once the web link is on)</span>'}${w.verify ? copy(w.verify) : '<span>(the verify token appears once you save your details)</span>'}
+        <span>Then, under <b>Webhook fields</b>, click <b>Subscribe</b> next to <b>messages</b>.</span>` },
+    { done: w.paired, title: 'Pair your WhatsApp',
+      body: w.code ? `<span>From your WhatsApp, send <code>orbit ${esc(w.code)}</code> to your Orbit test number. The code works once, for 15 minutes.</span><span>${btn('wapair', 'New code')}</span>`
+        : `<span>Only the number you pair gets answers.</span><span><button type="button" class="btn small primary" data-phone="wapair" ${ro} ${waSaved ? '' : 'disabled'}>Pair my WhatsApp</button></span>` },
+    { done: w.used, title: 'Say hello', body: '<span>Write anything to your Orbit number: it goes to your main assistant. The same commands as Telegram work here.</span>' },
+  ]);
+  const waPanel = !w.paired
+    ? `<div class="scard phcard" id="whatsapp">${head('WhatsApp', 'Chat with your team from WhatsApp, through Meta\'s official WhatsApp Cloud API. About 15 minutes on Meta\'s website, free; Orbit gets its own WhatsApp number (Meta\'s test number).')}
+      ${w.error ? status('bad', esc(w.error)) : ''}${waSetup}${waSaved ? `<div class="acts2">${btn('waforget', 'Forget these details', 'ghost')}</div>` : ''}</div>`
+    : `<div class="scard phcard" id="whatsapp">${head('WhatsApp', 'Chat with your team from WhatsApp.', sw('whatsapp', w.on))}
+      ${w.error ? status('bad', esc(w.error)) : !p.url ? status('bad', 'WhatsApp needs the web link: switch it on under <b>Web link</b>.') : !w.on ? status('idle', 'Off. Orbit ignores WhatsApp messages until you switch it back on.')
+        : status('good', `✓ Connected to ${esc(w.owner)}. Write to your Orbit number to talk to your team.`)}
+      ${row('Test it', 'Orbit sends you a WhatsApp message. WhatsApp only allows this within 24 hours of your last message to Orbit.', btn('watest', 'Send a test message'))}
+      ${row('Meta', w.hooked ? 'Meta reaches Orbit at its current link.' : "Meta hasn't checked Orbit's current link yet: see step 7 in the setup steps.")}
+      ${row('Your number', 'Unpair to use a different number.', `${btn('waunpair', 'Unpair', 'ghost')}${btn('waforget', 'Forget details', 'ghost')}`)}
+      ${fold('Setup steps', waSetup, !w.hooked)}</div>`;
+
+  // ---- the three, side by side: how each is doing; one opens below ----
+  const linkPill = !p.password ? ['Not set up', 'idle'] : !p.on ? ['Off', 'idle'] : working ? ['Working', 'good'] : linkProblem ? ['Problem', 'bad'] : ['Checking…', 'idle'];
+  const tgPill = !t.token ? ['Not set up', 'idle'] : !t.paired ? ['Not paired', 'idle'] : t.error ? ['Problem', 'bad'] : t.on ? ['Connected', 'good'] : ['Off', 'idle'];
+  const waPill = !waSaved ? ['Not set up', 'idle'] : !w.paired ? ['Not paired', 'idle'] : w.error || !p.url ? ['Problem', 'bad'] : w.on ? ['Connected', 'good'] : ['Off', 'idle'];
+  const tile = (key, name, [pill, cls], line) => `<button type="button" class="phtile ${phoneTab === key ? 'on' : ''}" data-phonetab="${key}">
+    <span class="top"><b>${name}</b><span class="phpill ${cls}">${pill}</span></span><small>${line}</small></button>`;
+  setHTML(box, `${outside ? `<div class="scard phcard"><p class="note" style="margin:0">You're signed in from outside. These settings can only be changed on the computer Orbit runs on.
+      <button type="button" class="btn small" data-phone="logout">Sign out of this phone</button></p></div>` : ''}
+    <div class="phtiles">${tile('link', 'Web link', linkPill, working ? esc(p.url.replace(/^https:\/\//, '')) : 'Orbit in your phone\'s browser')}
+      ${tile('telegram', 'Telegram', tgPill, t.paired ? `@${esc(t.bot)}` : 'Chat from Telegram')}
+      ${tile('whatsapp', 'WhatsApp', waPill, w.paired ? `Paired with ${esc(w.owner)}` : 'Chat from WhatsApp')}</div>
+    ${{ link: linkPanel, telegram: tgPanel, whatsapp: waPanel }[phoneTab]}`);
+}
 async function renderSettings() {
   document.querySelectorAll('.snav a').forEach((a) => a.classList.toggle('on', a.dataset.s === (view.sub === 'edit' ? 'team' : view.sub)));
   const box = $('#sContent');
@@ -2156,6 +2422,7 @@ async function renderSettings() {
   if (view.sub === 'projects') return setHTML(box, projectsListHTML());
   if (view.sub === 'skills') return renderSkills(box);
   if (view.sub === 'connectors') return renderConnectors(box);
+  if (view.sub === 'phone') return renderPhone(box);
   if (view.sub === 'appearance') { if (mounted !== 'appearance') { mounted = 'appearance'; setHTML(box, lookHTML()); } return; }
   const key = view.sub + (view.id ?? 'new');
   if (mounted === key) return; // forms are filled once, so a refresh never wipes what you're typing
@@ -2422,7 +2689,7 @@ const RENDER = { live: renderLive, archive: renderArchive, inbox: renderInbox, h
 
 function route() {
   const h = location.hash.slice(1) || '/';
-  const m = h.match(/^\/(task|project|person)\/(\d+)$/), st = h.match(/^\/settings(?:\/(rules|team|projects|appearance|skills|connectors))?(?:\/(new|\d+))?$/);
+  const m = h.match(/^\/(task|project|person)\/(\d+)$/), st = h.match(/^\/settings(?:\/(rules|team|projects|appearance|skills|connectors|phone))?(?:\/(new|\d+))?$/);
   view = m ? { name: m[1], id: Number(m[2]) }
     : st ? { name: 'settings', sub: st[2] ? 'edit' : st[1] || 'general', id: st[2] && st[2] !== 'new' ? Number(st[2]) : null }
     : { name: { '/inbox': 'inbox', '/live': 'live', '/tasks': 'tasks', '/scheduled': 'scheduled', '/team': 'team', '/archive': 'archive' }[h] || 'home' };
@@ -3147,6 +3414,31 @@ document.addEventListener('click', async (ev) => {
   if (!el('.plus')) closeMenus();
   if (point && !el('.pointpop') && !el('.composer textarea') && !el('[data-point]')) closePoint();
   if (el('[data-conncheck]')) return renderConnectors($('#sContent'), true);
+  if (el('[data-copytext]')) { const b = el('[data-copytext]'); await navigator.clipboard?.writeText(b.dataset.copytext).catch(() => {}); b.textContent = 'Copied'; return setTimeout(() => (b.textContent = 'Copy'), 1200); }
+  if (el('[data-phonesignout]')) { // Settings → Phone: sign one device out
+    try { await api('PUT', '/api/remote', { signOut: el('[data-phonesignout]').dataset.phonesignout }); } catch (err) { return showError(err); }
+    return renderPhone($('#sContent'), true);
+  }
+  if (el('[data-phonetab]')) { phoneTab = el('[data-phonetab]').dataset.phonetab; return renderPhone($('#sContent')); } // Settings → Phone: open one of the three
+  if (el('[data-linkmode]')) { // Settings → Phone: free link or your own domain
+    const m = el('[data-linkmode]').dataset.linkmode;
+    if (m === 'free' && phone?.ownUrl) {
+      if (!confirm('Stop using your own address, and use a free Cloudflare link instead?')) return;
+      try { await api('PUT', '/api/remote', { ownUrl: '', tunnelToken: '' }); } catch (err) { return showError(err); }
+    }
+    linkMode = m;
+    return renderPhone($('#sContent'), true);
+  }
+  if (el('[data-phone]')) { // Settings → Phone buttons
+    const what = el('[data-phone]').dataset.phone;
+    if (what === 'logout') { await fetch('/api/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {}); return location.replace('/'); }
+    if (what === 'recheck') { el('[data-phone]').textContent = 'Checking…'; try { phone = await api('GET', '/api/remote?check=1'); phoneAt = Date.now(); } catch {} return renderPhone($('#sContent')); }
+    const [where, body] = { signoutall: ['', { signOutAll: true }], tgpair: ['/telegram', { pair: true }], tgunpair: ['/telegram', { unpair: true }], tgtest: ['/telegram', { test: true }],
+      tgforget: ['/telegram', { token: '' }], wapair: ['/whatsapp', { pair: true }], waunpair: ['/whatsapp', { unpair: true }], watest: ['/whatsapp', { test: true }], waforget: ['/whatsapp', { forget: true }] }[what] ?? [];
+    if (!body || (/forget|signoutall/.test(what) && !confirm(what === 'signoutall' ? 'Sign out every phone and browser that uses the web link?' : 'Remove these details from Orbit?'))) return;
+    try { await api('PUT', `/api/remote${where}`, body); } catch (err) { showError(err); }
+    return renderPhone($('#sContent'), true);
+  }
   if (el('[data-connmain]')) { // a new main AI
     try { await api('PUT', '/api/connectors', { main: el('[data-connmain]').dataset.connmain }); await tick(); } catch (err) { showError(err); }
     return renderConnectors($('#sContent'), true);
@@ -3313,6 +3605,14 @@ document.addEventListener('click', async (ev) => {
 
 document.addEventListener('submit', async (ev) => {
   const f = ev.target;
+  if (f.dataset.phoneform) { // Settings → Phone forms: the password, your own address, the Telegram token, the WhatsApp details
+    ev.preventDefault();
+    const v = Object.fromEntries(new FormData(f)), kind = f.dataset.phoneform;
+    const body = kind === 'wa' ? { ...v, ...(v.token ? {} : { token: undefined }) } : kind === 'domain' ? { ownUrl: v.ownUrl, ...(v.tunnelToken ? { tunnelToken: v.tunnelToken } : {}) } : v;
+    try { await api('PUT', `/api/remote${{ tgtoken: '/telegram', wa: '/whatsapp' }[kind] ?? ''}`, body); f.reset(); }
+    catch (err) { return showError(err); }
+    return renderPhone($('#sContent'), true);
+  }
   if (f.dataset.connkey) { // your xAI key: saved on this Mac, never shown again
     ev.preventDefault();
     try { await api('PUT', '/api/connectors', { engine: f.dataset.connkey, key: f.elements.key.value }); } catch (err) { return showError(err); }
@@ -3440,6 +3740,14 @@ document.addEventListener('input', (ev) => {
 });
 document.addEventListener('change', async (ev) => {
   const t = ev.target;
+  if (t.dataset.phoneswitch) { // Settings → Phone: the web link, Telegram, WhatsApp on or off
+    t.disabled = true;
+    const which = t.dataset.phoneswitch;
+    try { await api('PUT', ['link', 'locallock'].includes(which) ? '/api/remote' : `/api/remote/${which}`, which === 'locallock' ? { localLock: t.checked } : { on: t.checked }); }
+    catch (err) { t.checked = !t.checked; showError(err); }
+    if (which === 'locallock' && t.checked) return location.replace('/'); // sign in on this computer now
+    return renderPhone($('#sContent'), true);
+  }
   if (t.dataset.conn) { // Settings → Connectors: switch an engine on or off
     t.disabled = true;
     try { await api('PUT', '/api/connectors', { engine: t.dataset.conn, on: t.checked }); await tick(); } catch (err) { t.checked = !t.checked; showError(err); }

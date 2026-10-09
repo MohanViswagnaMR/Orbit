@@ -69,6 +69,10 @@ export async function makeBackup(dir, file, parts = Object.keys(PARTS)) {
     const snap = new DatabaseSync(path.join(stage, 'crew.db')); // what was left out is forgotten too: no broken pictures or missing skills after a restore
     try {
       try { snap.exec("UPDATE settings SET value = json_remove(value, '$.grok.key') WHERE key = 'connectors' AND json_valid(value)"); } catch {} // your xAI key stays on this Mac
+      // and so do your Telegram and WhatsApp keys and the phones signed in through the web link (you pair and sign in again after a restore)
+      try { snap.exec("UPDATE settings SET value = json_remove(value, '$.token', '$.appSecret') WHERE key IN ('telegram', 'whatsapp') AND json_valid(value)"); } catch {}
+      try { snap.exec('DELETE FROM sessions'); } catch {}
+      try { snap.exec("UPDATE settings SET value = '' WHERE key = 'remote_tunnel_token'"); } catch {} // and your Cloudflare tunnel's token
       if (!keep.has('pictures')) try { snap.exec("UPDATE employees SET avatar = ''; UPDATE settings SET value = '' WHERE key = 'owner_avatar';"); } catch {} // older data may lack these
       if (!keep.has('skills')) try {
         for (const e of snap.prepare('SELECT id, skills FROM employees').all()) {
@@ -82,6 +86,7 @@ export async function makeBackup(dir, file, parts = Object.keys(PARTS)) {
     fs.writeFileSync(path.join(stage, 'orbit-backup.json'), JSON.stringify(about, null, 2));
     fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
     await run(['-czf', path.resolve(file), '-C', stage, '.']);
+    if (process.platform !== 'win32') try { fs.chmodSync(path.resolve(file), 0o600); } catch {} // a backup holds your chats: only you can open it
     return about;
   } finally { fs.rmSync(stage, { recursive: true, force: true }); }
 }

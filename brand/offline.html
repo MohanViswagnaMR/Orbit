@@ -52,7 +52,7 @@
   for (const k of ['mac', 'win', 'linux']) document.getElementById('row-' + k).hidden = k !== os;
   // This page sits at Orbit's own address, so reloading brings Orbit back once it answers.
   const back = async () => {
-    try { const r = await fetch('/api/state', { cache: 'no-store' }); if (r.ok) { location.reload(); return true; } } catch {}
+    try { const r = await fetch('/health', { cache: 'no-store' }); if (r.ok) { location.reload(); return true; } } catch {}
     return false;
   };
   setInterval(back, 3000);

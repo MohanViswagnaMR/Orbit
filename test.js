@@ -12,8 +12,23 @@ process.env.CREW_DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'crew-test-'));
 process.env.CREW_CLAUDE_HOME = path.join(process.env.CREW_DATA, 'claude-home'); // a pretend ~/.claude, so tests never read yours
 process.env.CLAUDE_BIN = path.join(process.env.CREW_DATA, 'no-claude'); // and never start Claude (hiring draws a picture in the background)
 fs.writeFileSync(aFile, 'x');
-after(() => { fs.rmSync(process.env.CREW_DATA, { recursive: true, force: true }); fs.rmSync(aFile, { force: true }); });
-const { pickNotes, splitNotes, nextRun, permsOf, checkFolder, listFolder, bashPrefix, preApproved, describe, cleanAppearance, messageFiles, cleanSvg, STYLES, TOOLS, searchFonts, setBoss, cleanQuestions, cleanAttachments, rankFiles, archive, readSkillMd, saveSkill, findSkills, assignSkill, skillsOf, pickSkills, parseGithubUrl, searchSkills, readHiring, hireAll, exportPerson, exportTeam, importPerson, engineOf, availableModels, modelOk, readPick, readCodex, readAntigravity, sessionFor, handoff, baseModel } = await import('./server.js');
+// A pretend Telegram and WhatsApp (Meta's Graph API): they answer like the real ones and remember what Orbit sent.
+const http = await import('node:http');
+const sent = [];
+const fakeApi = http.createServer(async (req, res) => {
+  let raw = '';
+  for await (const c of req) raw += c;
+  let body = {};
+  try { body = JSON.parse(raw); } catch { body = Object.fromEntries(new URLSearchParams(raw)); }
+  sent.push({ path: req.url, body });
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(req.url.endsWith('/getMe') ? { ok: true, result: { username: 'test_orbit_bot' } } : req.url.endsWith('/getUpdates') ? { ok: true, result: [] } : { ok: true, result: { message_id: 1 }, messages: [{ id: 'w1' }] }));
+}).listen(0, '127.0.0.1');
+await new Promise((ok) => fakeApi.once('listening', ok));
+process.env.TELEGRAM_API = process.env.GRAPH_API = `http://127.0.0.1:${fakeApi.address().port}`;
+after(() => { fs.rmSync(process.env.CREW_DATA, { recursive: true, force: true }); fs.rmSync(aFile, { force: true }); fakeApi.close(); });
+const { pickNotes, splitNotes, nextRun, permsOf, checkFolder, listFolder, bashPrefix, preApproved, describe, cleanAppearance, messageFiles, cleanSvg, STYLES, TOOLS, searchFonts, setBoss, cleanQuestions, cleanAttachments, rankFiles, archive, readSkillMd, saveSkill, findSkills, assignSkill, skillsOf, pickSkills, parseGithubUrl, searchSkills, readHiring, hireAll, exportPerson, exportTeam, importPerson, engineOf, availableModels, modelOk, readPick, readCodex, readAntigravity, sessionFor, handoff, baseModel,
+  hashPassword, passwordOk, chunks, tgHtml, waText, tgUpdate, waMessage, onButton } = await import('./server.js');
 
 test('engines: models from every engine, what Auto picks, and each engine read the same way', () => {
   assert.deepEqual([engineOf('sonnet'), engineOf('gpt:gpt-5.5'), engineOf('gemini:gemini-3.1-pro-high')], ['claude', 'gpt', 'gemini']);
@@ -545,4 +560,57 @@ test('backups: a data folder goes into one file and comes back, with paths point
   const moved = aside(to);
   assert.ok(moved.includes('-old-') && fs.existsSync(path.join(moved, 'crew.db')) && !fs.existsSync(to));
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('your phone: the web link password, message formatting, and chatting from Telegram and WhatsApp', async () => {
+  const stored = hashPassword('correct horse');
+  assert.ok(passwordOk('correct horse', stored) && !passwordOk('wrong horse', stored) && !passwordOk(undefined, stored) && !passwordOk('x', ''));
+  assert.notEqual(hashPassword('same'), hashPassword('same')); // salted
+  assert.deepEqual(chunks('a'.repeat(5) + '\n\n' + 'b'.repeat(5), 8), ['aaaaa', 'bbbbb']);
+  assert.equal(tgHtml('**Hi** <you> & `x` [site](https://a.b/?q=1&r=2)'), '<b>Hi</b> &lt;you&gt; &amp; <code>x</code> <a href="https://a.b/?q=1&amp;r=2">site</a>');
+  assert.equal(tgHtml('```js\nif (a < b) go()\n```'), '<pre>if (a &lt; b) go()\n</pre>');
+  assert.equal(waText('## Plan\n**Done** [site](https://a.b)'), '*Plan*\n*Done* site (https://a.b)');
+
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(path.join(process.env.CREW_DATA, 'crew.db'));
+  const set = (k, v) => db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(k, typeof v === 'string' ? v : JSON.stringify(v));
+  const get = (k) => JSON.parse(db.prepare('SELECT value FROM settings WHERE key = ?').get(k)?.value || '{}');
+  db.prepare('DELETE FROM employees WHERE name = ?').run('Phoney');
+  const boss = Number(db.prepare("INSERT INTO employees (name, role, model, access, folder) VALUES ('Phoney', 'x', 'sonnet', 'read', ?)").run(path.join(process.env.CREW_DATA, 'phoney')).lastInsertRowid);
+  set('main_assistant', String(boss));
+  const until = async (fn) => { for (let i = 0; i < 40 && !fn(); i++) await new Promise((ok) => setTimeout(ok, 50)); return fn(); };
+  const to = (chat) => sent.filter((m) => m.path.endsWith('/sendMessage') && String(m.body.chat_id) === chat).map((m) => m.body.text);
+
+  // Telegram: strangers are turned away; the pairing code from Settings pairs your chat; then messages start a chat with your main assistant.
+  set('telegram', { token: '1:x', bot: 'test_orbit_bot', on: true, code: 'abc123', codeUntil: Date.now() + 60000 });
+  await tgUpdate({ update_id: 1, message: { chat: { id: 999, type: 'private' }, text: 'hello?' } });
+  assert.match(to('999').at(-1), /private Orbit bot/);
+  await tgUpdate({ update_id: 2, message: { chat: { id: 555, type: 'private' }, from: { first_name: 'Sam' }, text: '/start abc123' } });
+  assert.equal(get('telegram').chat, '555');
+  assert.equal(get('telegram').code, null); // a code works once
+  assert.match(to('555').at(-1), /paired/);
+  await tgUpdate({ update_id: 3, message: { chat: { id: 555, type: 'private' }, text: 'Plan my week' } });
+  const chat = db.prepare("SELECT * FROM tasks WHERE kind = 'chat' AND title = 'Plan my week'").get();
+  assert.equal(chat.employee_id, boss);
+  assert.equal(chat.via, 'telegram');
+  assert.ok(await until(() => to('555').some((m) => /Couldn't start/.test(m)))); // its reply (here: Claude isn't installed for tests) comes back to Telegram
+  await tgUpdate({ update_id: 4, message: { chat: { id: 555, type: 'private' }, text: '/team' } });
+  assert.match(to('555').at(-1), /Phoney/);
+  // A question with buttons: tapping one answers it in the chat.
+  db.prepare("INSERT INTO messages (task_id, kind, author, text, questions) VALUES (?, 'reply', 'Phoney', 'Which?', ?)").run(chat.id, JSON.stringify([{ question: 'Which day?', options: [{ label: 'Monday' }, { label: 'Friday' }] }]));
+  assert.equal(await onButton('telegram', `qa:${chat.id}:1`), 'Answered: Friday');
+  assert.equal(db.prepare("SELECT text FROM messages WHERE task_id = ? AND kind = 'me' ORDER BY id DESC").get(chat.id).text, 'Friday');
+  assert.match(await onButton('telegram', 'ap:99999:1'), /no longer waiting/);
+
+  // WhatsApp: the same, through Meta's API; only your paired number gets an answer.
+  set('whatsapp', { phoneId: '111', token: 't', owner: '15550001111', on: true });
+  const before = sent.length;
+  await waMessage({ from: '19998887777', type: 'text', text: { body: '/team' } });
+  assert.equal(sent.length, before);
+  await waMessage({ from: '15550001111', type: 'text', text: { body: '/team' } });
+  const out = sent.at(-1);
+  assert.equal(out.path, '/111/messages');
+  assert.equal(out.body.to, '15550001111');
+  assert.match(out.body.text.body, /\*Phoney\*/);
+  db.close();
 });

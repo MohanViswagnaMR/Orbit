@@ -135,7 +135,7 @@ if ($fresh -and $found.Count -gt 1) {
   $main = if ($n -ge 1 -and $n -le $found.Count) { $found[$n - 1] } else { $found[0] }
 }
 $busy = $false
-try { Invoke-WebRequest "$url/api/state" -UseBasicParsing -TimeoutSec 2 | Out-Null; $busy = $true } catch { }
+try { Invoke-WebRequest "$url/health" -UseBasicParsing -TimeoutSec 2 | Out-Null; $busy = $true } catch { }
 if ($busy) { Fail "Something else is already using port $Port (maybe another copy of Orbit). Set a different port first, e.g.  `$env:ORBIT_PORT = 4400  and run the installer again." }
 
 # 5. A hidden starter: runs Orbit with no window and writes its log to the data folder.
@@ -175,7 +175,7 @@ try {
 Start-Process 'wscript.exe' -ArgumentList "`"$vbs`""
 $up = $false
 for ($i = 0; $i -lt 40 -and -not $up; $i++) {
-  try { Invoke-WebRequest "$url/api/state" -UseBasicParsing -TimeoutSec 2 | Out-Null; $up = $true } catch { Start-Sleep -Milliseconds 500 }
+  try { Invoke-WebRequest "$url/health" -UseBasicParsing -TimeoutSec 2 | Out-Null; $up = $true } catch { Start-Sleep -Milliseconds 500 }
 }
 if (-not $up) { Fail "Orbit didn't start. See $log for why, or ask for help with what it says." }
 Ok "Orbit is running at $url"

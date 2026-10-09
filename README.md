@@ -22,6 +22,7 @@ It works on **macOS, Windows and Linux**.
 - **Claude, ChatGPT or Gemini.** Your team can run on any of them: one is the main AI, and in Settings → Connectors you can switch on the others (and Grok, with your xAI API key). Then anyone can run on them, or Auto can pick them when they fit best.
 - **Work in projects.** Each project has a folder and a shared memory the team keeps up to date.
 - **Attach files.** Upload files, or point at files in the project with `@`.
+- **From your phone.** Open the whole of Orbit from anywhere through a web link with a password (a free Cloudflare link, or your own domain), or chat with your team from **Telegram** or **WhatsApp**: requests for your OK, questions and finished work come with buttons.
 - **Share a teammate.** Export one person, or your whole team, as a file with their skills, and give it to a friend. Importing never overwrites anyone: a clashing name gets a number.
 - **Make it yours.** Themes, accent colours, backgrounds and any Google Font. Install it as an app with its own window.
 
@@ -90,9 +91,11 @@ Orbit keeps the app and your data in separate folders, so updating never touches
 
 ## Privacy and safety
 
-- **Only on your computer.** Orbit listens on `127.0.0.1`, so other computers on your network can't reach it.
+- **Only on your computer.** Orbit listens on `127.0.0.1`, so other computers on your network can't reach it, unless you switch the web link on (below).
+- **Only your account.** Orbit's data folder can only be opened by your own account on the computer, and backup files likewise. If other people have accounts on your computer, turn on **Password on this Mac too** (Settings → Phone → Web link) so they can't use Orbit without your password.
 - **Your own logins.** Your employees use the logins already on your computer: Claude Code, Codex (ChatGPT) or Antigravity (Gemini). Orbit never asks for a password. The only key it stores is an xAI key for Grok, if you add one: it stays on this computer, is never shown again, and is left out of backups.
 - **Antigravity.** Using Gemini adds an "orbit" tool connection to Antigravity's own settings; it only works inside Orbit's runs. Switching Gemini off, or uninstalling Orbit, removes it.
+- **The web link.** Off until you switch it on. Only signed-in phones and browsers get in: a password (only its hash is kept), sign-ins that last 30 days, and a lockout after repeated wrong passwords. The password, the link and the chat apps can only be changed on the computer itself. Telegram and WhatsApp only answer the one chat you paired, and their keys are left out of backups.
 - **You set the limits.** Each person can read only, edit files in their own folder, or have full access. On Claude, anything outside that asks you first. On ChatGPT and Gemini it is simply blocked, and they tell you.
 
 ## For developers

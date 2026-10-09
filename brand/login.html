@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orbit</title>
+<meta name="theme-color" content="#0f1424">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icons/orbit-180.png">
+<style>
+  :root { --bg: #f5f7fc; --card: #ffffff; --text: #161b2e; --muted: #5a6382; --line: #dfe4f1; --field: #f5f7fc; --accent: #6b5ce7; --on-accent: #ffffff; --bad: #c63a32;
+          --serif: ui-serif, "Iowan Old Style", Georgia, serif; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0f1424; --card: #182036; --text: #e6e9f5; --muted: #98a1bf; --line: #2a3452; --field: #0f1424; --accent: #9a8cff; --on-accent: #1f1e1d; --bad: #ef6d64; color-scheme: dark; } }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+         display: grid; place-items: center; padding: 24px 16px; -webkit-font-smoothing: antialiased; }
+  form { width: min(400px, 100%); background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 28px; display: grid; gap: 14px;
+         box-shadow: 0 24px 64px rgb(0 0 0 / .18); }
+  .logo { width: 52px; height: 52px; border-radius: 23%; display: grid; place-items: center; color: #fff; background: linear-gradient(145deg, #9a8cff, #6b5ce7); }
+  .logo svg { width: 66%; height: 66%; }
+  h1 { margin: 2px 0 0; font: 600 26px/1.2 var(--serif); }
+  p { margin: 0; color: var(--muted); font-size: 14.5px; }
+  input { width: 100%; font: inherit; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--field); color: var(--text); }
+  input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button { font: 600 15px system-ui, sans-serif; border-radius: 12px; padding: 12px 14px; border: 0; background: var(--accent); color: var(--on-accent); cursor: pointer; }
+  button:disabled { opacity: .6; cursor: default; }
+  #err { color: var(--bad); font-size: 14px; min-height: 1.2em; }
+</style>
+</head>
+<body>
+<form id="f">
+  <div class="logo"><svg viewBox="0 0 64 64" aria-hidden="true"><ellipse cx="32" cy="32" rx="26" ry="13" transform="rotate(-28 32 32)" fill="none" stroke="currentColor" stroke-width="2.6" opacity=".8"/><circle cx="32" cy="32" r="8.5" fill="currentColor"/><circle cx="50.2" cy="16.1" r="5.2" fill="currentColor"/><circle cx="8.6" cy="38.2" r="3.7" fill="currentColor"/><circle cx="27.8" cy="47.6" r="3.7" fill="currentColor"/></svg></div>
+  <h1>Sign in to Orbit</h1>
+  <p>Enter the password you set in Orbit (Settings → Phone). You stay signed in for 30 days.</p>
+  <input type="password" id="pw" autocomplete="current-password" placeholder="Password" aria-label="Password" required autofocus>
+  <button id="go">Sign in</button>
+  <div id="err" role="alert"></div>
+</form>
+<script>
+  // Signing in keeps this phone or browser signed in for 30 days.
+  document.getElementById('f').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const go = document.getElementById('go'), err = document.getElementById('err');
+    go.disabled = true; err.textContent = '';
+    try {
+      const r = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: document.getElementById('pw').value }) });
+      if (r.ok) return location.replace('/');
+      err.textContent = (await r.json().catch(() => ({}))).error || "Couldn't sign in.";
+    } catch { err.textContent = "Orbit isn't answering. Is your computer on?"; }
+    go.disabled = false;
+  });
+</script>
+</body>
+</html>
