@@ -723,22 +723,30 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { ap
   .conn input.switch:disabled { opacity: .4; cursor: default; }
   .conn input.switch:checked { background: var(--accent); }
   /* Settings → Connectors */
-  .conns { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
-  .conn { display: flex; flex-direction: column; gap: 10px; padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: color-mix(in srgb, var(--raised) 70%, transparent); }
-  .conn.on { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
-  .conn .chead { display: flex; align-items: center; gap: 12px; }
-  .conn .chead .main { flex: 1; display: flex; flex-direction: column; }
-  .conn .chead small { color: var(--muted); font-size: 12px; }
-  .conn .cicon { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; font-weight: 700; color: #fff; flex: none; }
-  .conn .about { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
-  .conn .cstat { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
+  .conns { display: grid; gap: 10px; }
+  .conn { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px 14px; align-items: center; padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--raised) 60%, transparent); transition: border-color .15s; }
+  .conn.on { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+  .conn .cicon { grid-row: span 2; align-self: start; width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; font-size: 17px; font-weight: 600; color: #fff; box-shadow: inset 0 0 0 1px rgb(255 255 255 / .14); }
+  .conn .ctitle { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-width: 0; }
+  .conn .ctitle b { font-size: 15px; font-weight: 600; }
+  .conn .ctitle small { color: var(--faint); font-size: 12.5px; }
+  .conn .cact { display: flex; align-items: center; gap: 10px; }
+  .conn .cact .always { font-size: 12px; color: var(--faint); }
+  .conn .cbody { grid-column: 2 / -1; display: grid; gap: 8px; min-width: 0; }
+  .conn .about { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.45; }
+  .conn .cacct { display: flex; align-items: center; gap: 8px; width: fit-content; max-width: 100%; padding: 6px 12px 6px 10px; border-radius: 10px; background: color-mix(in srgb, var(--bg) 70%, transparent); border: 1px solid var(--line); font-size: 13px; }
+  .conn .cacct svg { width: 15px; height: 15px; color: var(--accent); flex: none; }
+  .conn .cacct > span:not(.pill) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .conn .crow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+  .conn .cstat { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12.5px; }
   .conn .cstat .ok { color: var(--s-done); }
   .conn .cstat .no { color: var(--muted); }
-  .conn .cstat code { font: 11.5px var(--mono); padding: 1px 6px; border-radius: 6px; background: var(--bg); }
-  .conn .cmodels { display: flex; flex-wrap: wrap; gap: 4px; }
-  .conn .cmodels span { padding: 2px 8px; border-radius: 999px; font-size: 11.5px; border: 1px solid var(--line); color: var(--muted); }
-  .conn .ckey { display: flex; gap: 6px; }
+  .conn code { font: 11.5px var(--mono); padding: 1px 6px; border-radius: 6px; background: var(--bg); }
+  .conn .cmodels, .conn .cnote { margin: 0; font-size: 12px; color: var(--faint); line-height: 1.5; }
+  .conn .cmodels b { font-weight: 500; color: var(--muted); margin-right: 4px; }
+  .conn .ckey { display: flex; gap: 6px; max-width: 420px; }
   .conn .ckey input { flex: 1; min-width: 0; border: 1px solid var(--line-strong); border-radius: 9px; padding: 6px 10px; background: var(--bg); font-size: 13px; }
+  .cnotes { margin: 16px 0 0; padding-left: 18px; display: grid; gap: 4px; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
   .switch::after { content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / .3); transition: transform .15s; }
   .sform input.switch:checked, .conn input.switch:checked, .phcard input.switch:checked { background: var(--accent); }
   .phcard input.switch:disabled { opacity: .4; cursor: default; }
@@ -2206,27 +2214,30 @@ async function renderConnectors(box, again) {
   } else if (!conn) return; // still checking
   const mark = (ok, yes, no) => `<span class="${ok ? 'ok' : 'no'}">${ok ? '✓' : '○'} ${ok ? yes : no}</span>`;
   const hue = { claude: 'var(--accent)', gpt: '#10a37f', gemini: '#4285f4', grok: '#111' };
-  const claude = { key: 'claude', label: 'Claude', tool: 'Claude Code', installed: conn.claude.installed, signedIn: conn.claude.installed, on: conn.claude.on, install: 'curl -fsSL https://claude.ai/install.sh | bash',
+  const claude = { key: 'claude', label: 'Claude', tool: 'Claude Code', installed: conn.claude.installed, signedIn: conn.claude.signedIn ?? conn.claude.installed, account: conn.claude.account, on: conn.claude.on, install: 'curl -fsSL https://claude.ai/install.sh | bash', login: 'claude',
     about: "Anthropic's Claude: every skill and tool works, and teammates can ask you for approval mid-task. Haiku, Sonnet, Opus and Fable." };
   const card = (c) => {
     const main = c.key === conn.main, ready = c.key === 'claude' ? c.installed : c.signedIn, on = main || (c.on && (c.key !== 'claude' || c.installed));
-    return `<div class="conn ${on ? 'on' : ''}"><div class="chead"><span class="cicon" style="background:${hue[c.key]}">${esc(c.label[0])}</span>
-      <div class="main"><b>${esc(c.label)}</b><small>${esc(c.tool)}</small></div>
-      ${main ? '<span class="pill">Main AI</span>' : c.key !== 'grok' && ready ? `<button type="button" class="btn small" data-connmain="${c.key}">Make main</button>` : ''}
-      <input type="checkbox" class="switch" data-conn="${c.key}" ${on ? 'checked' : ''} ${main ? 'disabled title="Your main AI is always on"' : c.installed && (c.signedIn || c.on) ? '' : 'disabled'} aria-label="Let my team use ${esc(c.label)}"></div>
-    <p class="about">${esc(c.about)}</p>
-    <div class="cstat">${mark(c.installed, `${esc(c.tool.split(',')[0])} is installed`, `Install it: <code>${esc(c.install)}</code>`)}
-      ${c.key === 'claude' ? '' : c.key === 'grok' ? mark(c.signedIn, 'Your xAI key works', c.hasKey ? esc(c.error || 'Your key was turned down') : 'Add your xAI API key below')
-        : mark(c.signedIn, 'Signed in', `Sign in: open Terminal and run <code>${esc(c.login)}</code>`)}
-      ${c.key === 'gemini' && on ? '<span class="no">Orbit added an "orbit" connection to Antigravity, so Gemini teammates can use Orbit\'s tools. It only works inside Orbit.</span>' : ''}</div>
-    ${c.models?.length ? `<div class="cmodels">${c.models.slice(0, 12).map((m) => `<span>${esc(m.label)}</span>`).join('')}</div>` : ''}
-    ${c.key === 'grok' ? `<form class="ckey" data-connkey="grok"><input type="password" name="key" autocomplete="off" placeholder="${c.hasKey ? 'Key saved. Paste a new one to replace it' : 'xai-…'}" aria-label="xAI API key"><button class="btn small">Save</button></form>` : ''}</div>`;
+    return `<div class="conn ${on ? 'on' : ''}"><span class="cicon" style="background:${hue[c.key]}">${esc(c.label[0])}</span>
+      <div class="ctitle"><b>${esc(c.label)}</b><small>${esc(c.tool)}</small>${main ? '<span class="pill" style="--c:var(--accent)">Main AI</span>' : ''}</div>
+      <div class="cact">${main ? '<span class="always">Always on</span>'
+        : `${c.key !== 'grok' && ready ? `<button type="button" class="btn small ghost" data-connmain="${c.key}">Make main</button>` : ''}
+          <input type="checkbox" class="switch" data-conn="${c.key}" ${on ? 'checked' : ''} ${c.installed && (c.signedIn || c.on) ? '' : 'disabled'} aria-label="Let my team use ${esc(c.label)}">`}</div>
+      <div class="cbody"><p class="about">${esc(c.about)}</p>
+        <div class="crow">${c.account ? `<div class="cacct">${icon('user')}<span>${esc(c.account.name)}</span>${c.account.plan ? `<span class="pill" style="--c:var(--accent)">${esc(c.account.plan[0].toUpperCase() + c.account.plan.slice(1))} plan</span>` : ''}</div>` : ''}
+        <div class="cstat">${mark(c.installed, 'Installed', `Install it: <code>${esc(c.install)}</code>`)}
+          ${c.signedIn || (c.key === 'claude' && !c.installed) ? '' : c.key === 'grok' ? mark(false, '', c.hasKey ? esc(c.error || 'Your key was turned down') : 'Add your xAI API key below')
+            : mark(false, '', `Sign in: open Terminal and run <code>${esc(c.login)}</code>`)}</div></div>
+        ${c.models?.length ? `<p class="cmodels"><b>Models</b>${c.models.slice(0, 12).map((m) => esc(m.label)).join(' · ')}</p>` : ''}
+        ${c.key === 'gemini' && on ? '<p class="cnote">Orbit added an "orbit" connection to Antigravity, so Gemini teammates can use Orbit\'s tools. It only works inside Orbit.</p>' : ''}
+        ${c.key === 'grok' ? `<form class="ckey" data-connkey="grok"><input type="password" name="key" autocomplete="off" placeholder="${c.hasKey ? 'Key saved. Paste a new one to replace it' : 'xai-…'}" aria-label="xAI API key"><button class="btn small">Save</button></form>` : ''}</div></div>`;
   };
-  setHTML(box, `<div class="scard"><div class="tl-head"><div><h3>Connectors</h3><p>The AIs your team runs on. Each one runs through its own app on this computer, signed in with your own account, so it uses your plan with that company.
-      Your <b>main AI</b> is always on: Orbit's own jobs run on it (Auto's picks, pictures, the hiring assistant, skill matching). Switch others on to use their models too, in anyone's profile or any chat, or leave people on Auto and Orbit picks the best model for each chat.
-      Only Claude teammates can ask you for approval mid-task; on ChatGPT and Gemini, whatever their file access doesn't allow is simply blocked.</p></div>
+  setHTML(box, `<div class="scard"><div class="tl-head"><div><h3>Connectors</h3><p>The AIs your team runs on. Each one works through its own app on this computer, signed in with your account, so it uses your own plan with that company.</p></div>
       <span class="tl-btns"><button type="button" class="btn small" data-conncheck>Check again</button></span></div>
-    <div class="conns">${[claude, ...conn.engines].map(card).join('')}</div></div>`);
+    <div class="conns">${[claude, ...conn.engines].map(card).join('')}</div>
+    <ul class="cnotes"><li>Your <b>main AI</b> is always on. Orbit's own jobs run on it: Auto's picks, pictures, the hiring assistant and skill matching.</li>
+      <li>Switch others on to use their models in anyone's profile or any chat, or leave people on Auto and Orbit picks the best model for each chat.</li>
+      <li>Only Claude teammates can ask you for approval mid-task. On ChatGPT and Gemini, whatever their file access doesn't allow is simply blocked.</li></ul></div>`);
 }
 // Settings → Phone: open Orbit from anywhere (a web link with a password), and chat with your team from Telegram or WhatsApp.
 let phone = null, phoneAt = 0, linkMode = null, phoneTab = 'link'; // linkMode: which kind of web link you're looking at (null = the one you use); phoneTab: which of the three is open

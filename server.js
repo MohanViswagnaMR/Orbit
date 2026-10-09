@@ -1279,23 +1279,29 @@ const ran = (bin, args, ms) => new Promise((ok) => { // { out, code }, whatever 
 const quietly = async (bin, args, ms) => (await ran(bin, args, ms)).out;
 export async function checkEngines() {
   const out = { claude: { installed: !!findBin(CLAUDE) } }, codex = findBin('codex'), agy = findBin('agy'), key = connectors().grok?.key;
+  if (out.claude.installed) try { // which account Claude Code is signed in with (older versions have no 'auth status': we just don't know)
+    const a = JSON.parse(await quietly(findBin(CLAUDE), ['auth', 'status'], 15000));
+    out.claude.signedIn = !!a.loggedIn;
+    if (a.loggedIn) out.claude.account = { name: a.email || (a.authMethod === 'api_key' ? 'An Anthropic API key' : 'Your Claude account'), plan: a.subscriptionType || null };
+  } catch {}
   if (codex) {
     let models = []; // the ones Codex itself offers you (it keeps the list up to date)
     try { models = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.codex', 'models_cache.json'), 'utf8')).models ?? []; } catch {}
-    out.gpt = { installed: true, signedIn: /logged in/i.test(await quietly(codex, ['login', 'status'], 15000)),
+    const status = await quietly(codex, ['login', 'status'], 15000), signedIn = /logged in/i.test(status); // Codex only says how, not who
+    out.gpt = { installed: true, signedIn, account: signedIn ? { name: /chatgpt/i.test(status) ? 'Your ChatGPT account' : 'An OpenAI API key' } : null,
       models: models.filter((x) => x?.visibility === 'list' && /^gpt/.test(x.slug)).map((x) => ({ id: x.slug, label: x.display_name || x.slug, about: x.description })) };
   } else out.gpt = { installed: false, signedIn: false, models: [] };
   if (agy) { // newest first; only the newest Flash and Pro
     const newest = {}, models = (await quietly(agy, ['models'], 45000)).split('\n').map((l) => l.split('\t').map((x) => x.trim()))
       .filter(([id, label]) => label && /^gemini-[\d.]+-\w+/.test(id)).filter(([id]) => { const [, v, kind] = id.match(/^gemini-([\d.]+)-(\w+)/); return (newest[kind] ??= v) === v; })
       .map(([id, label]) => ({ id, label }));
-    out.gemini = { installed: true, signedIn: models.length > 0, models };
+    out.gemini = { installed: true, signedIn: models.length > 0, account: models.length ? { name: 'Your Google account' } : null, models };
   } else out.gemini = { installed: false, signedIn: false, models: [] };
   out.grok = { installed: !!codex, signedIn: false, models: [] };
   if (key) {
     const r = await fetch('https://api.x.ai/v1/models', { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15000) }).catch(() => null);
     const j = r?.ok ? await r.json().catch(() => null) : null;
-    out.grok = { ...out.grok, signedIn: !!j, models: (j?.data ?? []).map((x) => x.id).filter((id) => /grok/.test(id)).map((id) => ({ id, label: id })), error: r && !r.ok ? `xAI turned the key down (${r.status})` : r ? null : "Couldn't reach xAI" };
+    out.grok = { ...out.grok, signedIn: !!j, account: j ? { name: 'Your xAI API key' } : null, models: (j?.data ?? []).map((x) => x.id).filter((id) => /grok/.test(id)).map((id) => ({ id, label: id })), error: r && !r.ok ? `xAI turned the key down (${r.status})` : r ? null : "Couldn't reach xAI" };
   }
   return (engineInfo = out);
 }
@@ -2520,7 +2526,7 @@ const routes = {
   'GET /api/connectors': async (_, b) => {
     if (b.again || !engineInfo.gpt) await checkEngines();
     const on = connectors();
-    return { main: mainEngine(), claude: { installed: !!engineInfo.claude?.installed, on: on.claude?.on !== false },
+    return { main: mainEngine(), claude: { installed: !!engineInfo.claude?.installed, signedIn: engineInfo.claude?.signedIn, account: engineInfo.claude?.account, on: on.claude?.on !== false },
       engines: Object.entries(ENGINES).map(([key, x]) => ({ key, ...x, ...engineInfo[key], on: !!on[key]?.on, hasKey: !!on[key]?.key, about: ENGINE_ABOUT[key] })) };
   },
   'PUT /api/connectors': async (_, b) => {
